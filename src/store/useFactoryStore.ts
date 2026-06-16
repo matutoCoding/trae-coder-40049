@@ -42,6 +42,18 @@ interface FactoryState {
   reworkOrder: (orderId: string, reason: string) => void;
   addReview: (orderId: string, rating: number, comment: string) => void;
   advanceFromCuringToSupport: (orderId: string) => void;
+  toggleUrgent: (orderId: string) => void;
+  shipOrder: (orderId: string, carrier: string, trackingNo: string) => void;
+  confirmDelivery: (orderId: string, customerName: string) => void;
+  getCostBreakdown: (orderId: string) => {
+    materialCost: number;
+    machineCost: number;
+    laborCost: number;
+    reworkCost: number;
+    totalCost: number;
+    profit: number;
+    profitMargin: number;
+  };
   refillResin: (printerId: string, amountLiters: number) => void;
   changeResin: (printerId: string, resinId: string) => void;
   updateResinStock: (resinId: string, delta: number) => void;
@@ -503,6 +515,130 @@ export const useFactoryStore = create<FactoryState>((set, get) => ({
           : s
       ),
     }));
+  },
+
+  toggleUrgent: (orderId) => {
+    set((state) => ({
+      orders: state.orders.map((o) =>
+        o.id === orderId ? { ...o, isUrgent: !o.isUrgent } : o
+      ),
+    }));
+  },
+
+  shipOrder: (orderId, carrier, trackingNo) => {
+    const state = get();
+    const order = state.orders.find((o) => o.id === orderId);
+    if (!order || order.status !== "qc") return;
+
+    const statusLabels: Record<OrderStatus, string> = {
+      pending: "待审核",
+      reviewed: "已审核",
+      layout: "排版中",
+      printing: "打印中",
+      cleaning: "清洗中",
+      curing: "固化中",
+      support: "去支撑",
+      qc: "质检中",
+      shipping: "发货中",
+      completed: "已完成",
+    };
+
+    set((state) => ({
+      orders: state.orders.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: "shipping" as OrderStatus,
+              updatedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
+              shippingInfo: {
+                carrier,
+                trackingNo,
+                shippedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
+              },
+              timeline: [
+                ...o.timeline,
+                {
+                  status: "shipping",
+                  statusLabel: statusLabels["shipping"],
+                  timestamp: new Date().toISOString().replace("T", " ").slice(0, 19),
+                  operator: "系统",
+                  remark: `已发货，承运商：${carrier}，运单号：${trackingNo}`,
+                },
+              ],
+            }
+          : o
+      ),
+    }));
+  },
+
+  confirmDelivery: (orderId, customerName) => {
+    const state = get();
+    const order = state.orders.find((o) => o.id === orderId);
+    if (!order || order.status !== "shipping") return;
+
+    set((state) => ({
+      orders: state.orders.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: "completed" as OrderStatus,
+              updatedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
+              shippingInfo: o.shippingInfo
+                ? {
+                    ...o.shippingInfo,
+                    deliveredAt: new Date().toISOString().replace("T", " ").slice(0, 19),
+                    confirmedBy: customerName,
+                    confirmedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
+                  }
+                : o.shippingInfo,
+              timeline: [
+                ...o.timeline,
+                {
+                  status: "completed",
+                  statusLabel: "已完成",
+                  timestamp: new Date().toISOString().replace("T", " ").slice(0, 19),
+                  operator: customerName,
+                  remark: "客户已确认签收",
+                },
+              ],
+            }
+          : o
+      ),
+    }));
+  },
+
+  getCostBreakdown: (orderId) => {
+    const state = get();
+    const order = state.orders.find((o) => o.id === orderId);
+    if (!order) {
+      return { materialCost: 0, machineCost: 0, laborCost: 0, reworkCost: 0, totalCost: 0, profit: 0, profitMargin: 0 };
+    }
+
+    const resinInfo = state.resins.find((r) => r.type === order.materialType);
+    const resinPricePerL = resinInfo?.pricePerUnit || 480;
+    const totalVolumeCm3 = order.modelFiles.reduce((sum, f) => sum + (f.volume || 0), 0);
+    const layerFactor = order.layerHeight <= 0.025 ? 1.3 : order.layerHeight <= 0.05 ? 1.0 : 0.75;
+    const materialCost = Math.round((totalVolumeCm3 / 1000) * resinPricePerL * layerFactor * order.quantity);
+
+    const printDurationMin = order.printDuration || order.estimatedDuration?.printing || 480;
+    const machineRatePerMin = 1.2;
+    const machineCost = Math.round(printDurationMin * machineRatePerMin);
+
+    const laborDurationMin =
+      (order.estimatedDuration?.cleaning || 900) / 60 * 0.8 +
+      (order.estimatedDuration?.support || 1800) / 60 * 1.2 +
+      (order.estimatedDuration?.qc || 1200) / 60 * 1.0;
+    const laborRatePerMin = 0.6;
+    const laborCost = Math.round(laborDurationMin * laborRatePerMin);
+
+    const reworkCount = order.reworkCount || 0;
+    const reworkCost = reworkCount * Math.round((materialCost + machineCost + laborCost) * 0.5);
+
+    const totalCost = materialCost + machineCost + laborCost + reworkCost;
+    const profit = order.totalPrice - totalCost;
+    const profitMargin = order.totalPrice > 0 ? Math.round((profit / order.totalPrice) * 100) : 0;
+
+    return { materialCost, machineCost, laborCost, reworkCost, totalCost, profit, profitMargin };
   },
 
   updatePrinter: (printerId, updates) => {

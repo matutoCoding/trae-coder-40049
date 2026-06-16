@@ -26,7 +26,17 @@ import {
   Eye,
   Edit3,
   MessageSquare,
+  Zap,
 } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 import { useNavigate, useParams } from "react-router-dom";
 import { useFactoryStore } from "../store/useFactoryStore";
 import { OrderStatusBadge, ProgressBar } from "../components/StatusBadges";
@@ -59,6 +69,8 @@ export default function OrderDetail() {
   const advanceToCuring = useFactoryStore((s) => s.advanceToCuring);
   const advanceFromCuringToSupport = useFactoryStore((s) => s.advanceFromCuringToSupport);
   const updateOrderStatus = useFactoryStore((s) => s.updateOrderStatus);
+  const toggleUrgent = useFactoryStore((s) => s.toggleUrgent);
+  const getCostBreakdown = useFactoryStore((s) => s.getCostBreakdown);
 
   const [activeTab, setActiveTab] = useState<"info" | "files" | "timeline" | "messages">("info");
   const [deviceSelector, setDeviceSelector] = useState<"printer" | "cleaning" | "curing" | null>(null);
@@ -104,6 +116,12 @@ export default function OrderDetail() {
                 订单详情
               </h1>
               <OrderStatusBadge status={order.status} />
+              {order.isUrgent && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-mono bg-red-500/15 text-red-400 rounded-sm border border-red-500/30">
+                  <Zap className="w-3 h-3" />
+                  加急
+                </span>
+              )}
               {(order.reworkCount || 0) >= 2 && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-mono bg-red-500/15 text-red-400 rounded-sm border border-red-500/30">
                   <AlertTriangle className="w-3 h-3" />
@@ -529,6 +547,47 @@ export default function OrderDetail() {
         <div className="space-y-6">
           <div className="card-industrial p-5">
             <h3 className="font-display font-semibold text-dark-50 mb-4 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-industrial-400" />
+              订单信息
+            </h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-mono text-dark-400">订单号</span>
+                <span className="text-sm font-mono text-dark-200">{order.orderNo}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-mono text-dark-400">订单状态</span>
+                <OrderStatusBadge status={order.status} />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-mono text-dark-400">创建时间</span>
+                <span className="text-sm font-mono text-dark-200">{order.createdAt}</span>
+              </div>
+              <div className="pt-3 border-t border-dark-700">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={order.isUrgent || false}
+                    onChange={() => toggleUrgent(order.id)}
+                    disabled={order.status === "completed"}
+                    className={cn(
+                      "w-4 h-4 rounded-sm border-2 transition-colors",
+                      order.status === "completed"
+                        ? "border-dark-600 bg-dark-800 cursor-not-allowed"
+                        : "border-dark-600 bg-dark-800 text-industrial-500 focus:ring-industrial-500 cursor-pointer"
+                    )}
+                  />
+                  <span className="text-sm font-display text-dark-200">加急订单</span>
+                  {order.status === "completed" && (
+                    <span className="text-xs font-mono text-dark-500">（已完成订单不可修改）</span>
+                  )}
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div className="card-industrial p-5">
+            <h3 className="font-display font-semibold text-dark-50 mb-4 flex items-center gap-2">
               <Printer className="w-4 h-4 text-industrial-400" />
               生产设备
             </h3>
@@ -791,6 +850,96 @@ export default function OrderDetail() {
                 </button>
               )}
             </div>
+          </div>
+
+          <div className="card-industrial p-5">
+            <h3 className="font-display font-semibold text-dark-50 mb-4 flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-industrial-400" />
+              成本分析
+            </h3>
+            {(() => {
+              const cost = getCostBreakdown(order.id);
+              const reworkCount = order.reworkCount || 0;
+              const chartData = [
+                { name: "收入", value: order.totalPrice, color: "#22c55e" },
+                { name: "成本", value: cost.totalCost, color: "#f59e0b" },
+                { name: "毛利", value: cost.profit, color: "#a855f7" },
+              ];
+              return (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-mono text-blue-400">材料成本</span>
+                      <span className="text-sm font-mono text-dark-200">¥{cost.materialCost.toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-mono text-green-400">机器成本</span>
+                      <span className="text-sm font-mono text-dark-200">¥{cost.machineCost.toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-mono text-orange-400">人工成本</span>
+                      <span className="text-sm font-mono text-dark-200">¥{cost.laborCost.toLocaleString()}</span>
+                    </div>
+                    {reworkCount > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-mono text-red-400">返修成本</span>
+                        <span className="text-sm font-mono text-dark-200">¥{cost.reworkCost.toLocaleString()}</span>
+                      </div>
+                    )}
+                    <div className="pt-2 mt-2 border-t border-dark-700">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-display font-semibold text-dark-100">总成本</span>
+                        <span className="text-sm font-mono text-dark-100">¥{cost.totalCost.toLocaleString()}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-mono text-purple-400">毛利</span>
+                      <span className="text-sm font-mono text-dark-200">¥{cost.profit.toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-mono text-purple-400">毛利率</span>
+                      <span className="text-sm font-mono text-dark-200">{cost.profitMargin}%</span>
+                    </div>
+                  </div>
+                  <div className="pt-3 border-t border-dark-700">
+                    <div className="h-40">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chartData} barSize={32}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                          <XAxis
+                            dataKey="name"
+                            tick={{ fill: "#9ca3af", fontSize: 11 }}
+                            axisLine={{ stroke: "#374151" }}
+                            tickLine={false}
+                          />
+                          <YAxis
+                            tick={{ fill: "#9ca3af", fontSize: 11 }}
+                            axisLine={false}
+                            tickLine={false}
+                            tickFormatter={(value) => `¥${value}`}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: "#1f2937",
+                              border: "1px solid #374151",
+                              borderRadius: "2px",
+                              color: "#e5e7eb",
+                              fontSize: "12px",
+                            }}
+                            formatter={(value: number) => [`¥${value.toLocaleString()}`, ""]}
+                          />
+                          <Bar dataKey="value" radius={[2, 2, 0, 0]}>
+                            {chartData.map((entry, index) => (
+                              <rect key={index} fill={entry.color} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>

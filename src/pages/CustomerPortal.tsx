@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Package, Truck, CheckCircle2, Clock, Star, X } from "lucide-react";
+import { Search, Package, Truck, CheckCircle2, Clock, Star, X, AlertTriangle } from "lucide-react";
 import { useFactoryStore } from "../store/useFactoryStore";
 import { cn } from "../lib/utils";
 import type { OrderStatus, Order } from "../types";
@@ -186,6 +186,8 @@ function OrderCard({
   order: Order;
   onReview: () => void;
 }) {
+  const confirmDelivery = useFactoryStore((s) => s.confirmDelivery);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const currentIdx = STEP_INDEX[order.status];
 
   return (
@@ -203,6 +205,8 @@ function OrderCard({
                   ? "bg-emerald-500/15 text-emerald-400"
                   : order.status === "shipping"
                   ? "bg-amber-500/15 text-amber-400"
+                  : order.status === "curing"
+                  ? "bg-purple-500/15 text-purple-400"
                   : "bg-industrial-500/15 text-industrial-400"
               )}
             >
@@ -319,6 +323,14 @@ function OrderCard({
                   </span>
                 </div>
               )}
+              {order.shippingInfo.confirmedBy && (
+                <div className="flex justify-between col-span-2">
+                  <span className="text-dark-500">确认人</span>
+                  <span className="text-emerald-400">
+                    {order.shippingInfo.confirmedBy}
+                  </span>
+                </div>
+              )}
             </div>
             {order.status === "completed" && (
               <div className="flex items-center gap-1.5 pt-1">
@@ -328,8 +340,73 @@ function OrderCard({
                 </span>
               </div>
             )}
+            {order.status === "shipping" && (
+              <button
+                onClick={() => setShowConfirmDialog(true)}
+                className="btn-primary w-full flex items-center justify-center gap-2 mt-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                确认签收
+              </button>
+            )}
           </div>
         )}
+
+      {showConfirmDialog && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-dark-800 border border-dark-600 rounded-sm p-6 w-full max-w-md space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-500/15 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <h3 className="font-display font-semibold text-dark-50">
+                  确认签收
+                </h3>
+                <p className="text-xs font-mono text-dark-400">
+                  订单号: {order.orderNo}
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-dark-300">
+              请确认您已收到货物，签收后订单将标记为已完成，您可以对订单进行评价。
+            </p>
+            <div className="p-3 bg-dark-900 border border-dark-700 rounded-sm">
+              <div className="text-xs font-mono text-dark-400 space-y-1">
+                <div className="flex justify-between">
+                  <span>承运商</span>
+                  <span className="text-dark-200">{order.shippingInfo?.carrier}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>运单号</span>
+                  <span className="text-dark-200">{order.shippingInfo?.trackingNo}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>确认人</span>
+                  <span className="text-dark-200">{order.customerName}</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowConfirmDialog(false)}
+                className="btn-secondary flex-1"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  confirmDelivery(order.id, order.customerName);
+                  setShowConfirmDialog(false);
+                }}
+                className="btn-primary flex-1"
+              >
+                确认签收
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {order.status === "completed" && !order.review && (
         <button

@@ -12,6 +12,7 @@ import {
   Activity,
   Gauge,
   Star,
+  Zap,
 } from "lucide-react";
 import {
   BarChart,
@@ -205,11 +206,17 @@ function CapacityDashboard() {
   const cleaningStations = useFactoryStore((s) => s.cleaningStations);
   const curingStations = useFactoryStore((s) => s.curingStations);
   const dailyStats = useFactoryStore((s) => s.dailyStats);
+  const toggleUrgent = useFactoryStore((s) => s.toggleUrgent);
 
   const [selectedDate, setSelectedDate] = useState("2026-06-17");
+  const [activeTab, setActiveTab] = useState<"realtime" | "schedule">("realtime");
   const todayStr = "2026-06-17";
   const isToday = selectedDate === todayStr;
   const shortDate = selectedDate.slice(5);
+
+  const TIMELINE_START_HOUR = 9;
+  const TIMELINE_END_HOUR = 24;
+  const TIMELINE_TOTAL_MINUTES = (TIMELINE_END_HOUR - TIMELINE_START_HOUR) * 60;
 
   const stats = useMemo(() => {
     const dateOrders = orders.filter((o) =>
@@ -227,11 +234,11 @@ function CapacityDashboard() {
         });
 
         const totalPrints = printerOrders.length;
-        const failedPrints = printerOrders.filter(
-          (o) => (o.reworkCount || 0) > 0 || o.qcResult?.passed === false
-        ).length;
+        const reworkCountSum = printerOrders.reduce((sum, o) => sum + (o.reworkCount || 0), 0);
+        const failedQcCount = printerOrders.filter((o) => o.qcResult?.passed === false).length;
+        const totalFailures = reworkCountSum + failedQcCount;
         const successRate = totalPrints > 0
-          ? Math.round(((totalPrints - failedPrints) / totalPrints) * 100)
+          ? Math.round(100 * (totalPrints - totalFailures) / totalPrints)
           : totalPrints === 0 && p.status !== "maintenance"
           ? 100
           : 0;
@@ -315,55 +322,129 @@ function CapacityDashboard() {
       const resinUsed = dayStat?.resinUsed || 0;
       const completedCount = dayStat?.ordersCompleted || 0;
 
-      const nonIdlePrinters = printers.filter((p) => p.status !== "maintenance");
-      const printerCount = nonIdlePrinters.length || 1;
+      const nonMaintenancePrinters = printers.filter((p) => p.status !== "maintenance");
+      const activePrinterCount = nonMaintenancePrinters.length;
 
       const datePrintingOrders = orders.filter((o) =>
         o.timeline.some((t) => t.timestamp.startsWith(selectedDate) && t.status === "printing")
       );
       const printerOrderDistribution: Record<string, number> = {};
-      nonIdlePrinters.forEach((p, i) => {
+      nonMaintenancePrinters.forEach((p) => {
         printerOrderDistribution[p.id] = 0;
       });
-      datePrintingOrders.forEach((o, i) => {
+      datePrintingOrders.forEach((o) => {
         if (o.assignedPrinterId && printerOrderDistribution[o.assignedPrinterId] !== undefined) {
           printerOrderDistribution[o.assignedPrinterId] += 1;
-        } else {
-          const p = nonIdlePrinters[i % nonIdlePrinters.length];
-          if (p) printerOrderDistribution[p.id] += 1;
         }
       });
 
-      const totalPrintsByPrinter = Object.values(printerOrderDistribution).reduce((a, b) => a + b, 0) || 1;
+      const totalPrintsByPrinter = Object.values(printerOrderDistribution).reduce((a, b) => a + b, 0);
+      const hasOrderDistribution = totalPrintsByPrinter > 0;
 
-      const printerStats = printers.map((p) => {
-        const allocatedOrders = printerOrderDistribution[p.id] || 0;
-        const weight = p.status === "maintenance" ? 0 : (allocatedOrders / totalPrintsByPrinter);
-        const uptime = (printingHours * weight).toFixed(1);
-        const resin = (resinUsed * weight).toFixed(1);
-        const succRate = completedCount > 0
-          ? Math.min(100, Math.round(85 + (completedCount * 1.2) % 12))
-          : weight > 0 ? 88 : 0;
+      let allocatedPrintingHours = 0;
+      let allocatedResin = 0;
+
+      const printerStats = printers.map((p, idx) => {
+        if (p.status === "maintenance") {
+          return {
+            id: p.id,
+            name: p.name,
+            model: p.model,
+            status: p.status,
+            uptimeHours: "0.0",
+            totalPrints: 0,
+            completedPrints: 0,
+            successRate: 0,
+            resinConsumed: "0.0",
+          };
+        }
+
+        let uptime: string;
+        let resin: string;
+        let allocatedOrders: number;
+
+        if (hasOrderDistribution) {
+          const orderCount = printerOrderDistribution[p.id] || 0;
+          const weight = orderCount / totalPrintsByPrinter;
+          uptime = (printingHours * weight).toFixed(1);
+          resin = (resinUsed * weight).toFixed(1);
+          allocatedOrders = orderCount;
+        } else {
+          const evenShare = 1 / activePrinterCount;
+          const rawUptime = printingHours * evenShare;
+          const rawResin = resinUsed * evenShare;
+          
+          if (idx === nonMaintenancePrinters.length - 1) {
+            uptime = (printingHours - allocatedPrintingHours).toFixed(1);
+            resin = (resinUsed - allocatedResin).toFixed(1);
+          } else {
+            uptime = rawUptime.toFixed(1);
+            resin = rawResin.toFixed(1);
+          }
+          allocatedPrintingHours += parseFloat(uptime);
+          allocatedResin += parseFloat(resin);
+          allocatedOrders = Math.max(1, Math.round(completedCount * evenShare));
+        }
+
+        const datePrinterOrders = datePrintingOrders.filter((o) => o.assignedPrinterId === p.id);
+        const histReworkCountSum = datePrinterOrders.reduce((sum, o) => sum + (o.reworkCount || 0), 0);
+        const histFailedQcCount = datePrinterOrders.filter((o) => o.qcResult?.passed === false).length;
+        const histTotalFailures = histReworkCountSum + histFailedQcCount;
+        const succRate = datePrinterOrders.length > 0
+          ? Math.max(0, Math.round(100 * (datePrinterOrders.length - histTotalFailures) / datePrinterOrders.length))
+          : allocatedOrders > 0
+          ? Math.max(70, Math.round(95 - (allocatedOrders * 3) % 20))
+          : 0;
 
         return {
           id: p.id,
           name: p.name,
           model: p.model,
           status: p.status,
-          uptimeHours: p.status === "maintenance" ? "0.0" : uptime,
+          uptimeHours: uptime,
           totalPrints: allocatedOrders,
           completedPrints: allocatedOrders,
           successRate: succRate,
-          resinConsumed: p.status === "maintenance" ? "0.0" : resin,
+          resinConsumed: resin,
         };
       });
 
-      const cleaningTurnaround = completedCount > 0
-        ? Math.max(12, Math.round(18 + (completedCount % 8)))
-        : dailyStats.some((d) => d.date === shortDate && d.ordersCompleted > 0) ? 18 : 0;
-      const curingTurnaround = completedCount > 0
-        ? Math.max(25, Math.round(38 + (completedCount % 10)))
-        : dailyStats.some((d) => d.date === shortDate && d.ordersCompleted > 0) ? 38 : 0;
+      const histCleaningDeltas: number[] = [];
+      const histCuringDeltas: number[] = [];
+
+      dateOrders.forEach((o) => {
+        const cleaningStart = o.timeline.find((t) => t.status === "cleaning" && t.timestamp.startsWith(selectedDate));
+        const curingStart = o.timeline.find((t) => t.status === "curing" && t.timestamp.startsWith(selectedDate));
+        const supportStart = o.timeline.find((t) => t.status === "support" && t.timestamp.startsWith(selectedDate));
+
+        if (cleaningStart && curingStart) {
+          const delta = (parseTimestamp(curingStart.timestamp) - parseTimestamp(cleaningStart.timestamp)) / 60000;
+          if (delta > 0 && delta < 1440) histCleaningDeltas.push(delta);
+        }
+        if (curingStart && supportStart) {
+          const delta = (parseTimestamp(supportStart.timestamp) - parseTimestamp(curingStart.timestamp)) / 60000;
+          if (delta > 0 && delta < 1440) histCuringDeltas.push(delta);
+        }
+      });
+
+      let cleaningTurnaround: number;
+      let curingTurnaround: number;
+
+      if (histCleaningDeltas.length > 0) {
+        cleaningTurnaround = Math.round(histCleaningDeltas.reduce((a, b) => a + b, 0) / histCleaningDeltas.length);
+      } else if (completedCount > 0) {
+        cleaningTurnaround = Math.max(15, Math.round(15 + completedCount * 0.5));
+      } else {
+        cleaningTurnaround = dailyStats.some((d) => d.date === shortDate && d.ordersCompleted > 0) ? 20 : 0;
+      }
+
+      if (histCuringDeltas.length > 0) {
+        curingTurnaround = Math.round(histCuringDeltas.reduce((a, b) => a + b, 0) / histCuringDeltas.length);
+      } else if (completedCount > 0) {
+        curingTurnaround = Math.max(30, Math.round(35 + completedCount * 0.8));
+      } else {
+        curingTurnaround = dailyStats.some((d) => d.date === shortDate && d.ordersCompleted > 0) ? 40 : 0;
+      }
 
       return {
         printerStats,
@@ -376,31 +457,130 @@ function CapacityDashboard() {
     }
   }, [isToday, orders, printers, cleaningStations, curingStations, dailyStats, selectedDate, shortDate]);
 
-  return (
-    <div className="card-industrial p-5">
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-3">
-          <Gauge className="w-5 h-5 text-industrial-400" />
-          <h3 className="font-display font-semibold text-lg text-dark-50">
-            实时产能看板
-          </h3>
-          {isToday && (
-            <span className="px-2 py-0.5 text-[10px] font-mono bg-green-500/15 text-green-400 rounded-sm border border-green-500/30">
-              LIVE
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-dark-500" />
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="input-industrial text-xs py-1.5 px-2"
-          />
-        </div>
-      </div>
+  const scheduleData = useMemo(() => {
+    const getOrderStartTime = (order: Order, stationType: "printer" | "cleaning" | "curing"): number | null => {
+      const statusMap = {
+        printer: "printing",
+        cleaning: "cleaning",
+        curing: "curing",
+      };
+      const timelineEntry = order.timeline.find((t) => t.status === statusMap[stationType]);
+      if (!timelineEntry) return null;
 
+      const timestamp = parseTimestamp(timelineEntry.timestamp);
+      const date = new Date(timestamp);
+      const hours = date.getHours();
+      const minutes = date.getMinutes();
+      const totalMinutes = hours * 60 + minutes;
+      const startMinutes = TIMELINE_START_HOUR * 60;
+
+      if (totalMinutes < startMinutes || totalMinutes >= TIMELINE_END_HOUR * 60) {
+        return null;
+      }
+      return totalMinutes - startMinutes;
+    };
+
+    const getOrderDuration = (order: Order, stationType: "printer" | "cleaning" | "curing"): number => {
+      if (!order.estimatedDuration) return 60;
+      const durationMap = {
+        printer: order.estimatedDuration.printing / 60,
+        cleaning: order.estimatedDuration.cleaning / 60,
+        curing: order.estimatedDuration.curing / 60,
+      };
+      return Math.min(durationMap[stationType], TIMELINE_TOTAL_MINUTES);
+    };
+
+    interface ScheduleBlock {
+      orderId: string;
+      orderNo: string;
+      customerName: string;
+      isUrgent: boolean;
+      startMinutes: number;
+      durationMinutes: number;
+      startTimeStr: string;
+      endTimeStr: string;
+      status: Order["status"];
+    }
+
+    const buildSchedule = <T extends { id: string; name: string; status: string }>(
+      stations: T[],
+      idField: "assignedPrinterId" | "assignedCleaningId" | "assignedCuringId",
+      stationType: "printer" | "cleaning" | "curing"
+    ) => {
+      return stations.map((station) => {
+        const stationOrders = orders.filter((o) => o[idField] === station.id);
+        const blocks: ScheduleBlock[] = [];
+
+        stationOrders.forEach((order) => {
+          const startMinutes = getOrderStartTime(order, stationType);
+          if (startMinutes === null) return;
+
+          const durationMinutes = getOrderDuration(order, stationType);
+          const actualEnd = Math.min(startMinutes + durationMinutes, TIMELINE_TOTAL_MINUTES);
+          const actualDuration = actualEnd - startMinutes;
+
+          if (actualDuration <= 0) return;
+
+          const startHour = TIMELINE_START_HOUR + Math.floor(startMinutes / 60);
+          const startMin = startMinutes % 60;
+          const endHour = TIMELINE_START_HOUR + Math.floor(actualEnd / 60);
+          const endMin = actualEnd % 60;
+
+          blocks.push({
+            orderId: order.id,
+            orderNo: order.orderNo,
+            customerName: order.customerName,
+            isUrgent: !!order.isUrgent,
+            startMinutes,
+            durationMinutes: actualDuration,
+            startTimeStr: `${String(startHour).padStart(2, "0")}:${String(startMin).padStart(2, "0")}`,
+            endTimeStr: `${String(endHour).padStart(2, "0")}:${String(endMin).padStart(2, "0")}`,
+            status: order.status,
+          });
+        });
+
+        blocks.sort((a, b) => a.startMinutes - b.startMinutes);
+
+        return {
+          ...station,
+          blocks,
+          isRunning: blocks.length > 0 && station.status !== "idle" && station.status !== "maintenance",
+        };
+      });
+    };
+
+    return {
+      printers: buildSchedule(printers, "assignedPrinterId", "printer"),
+      cleaningStations: buildSchedule(cleaningStations, "assignedCleaningId", "cleaning"),
+      curingStations: buildSchedule(curingStations, "assignedCuringId", "curing"),
+    };
+  }, [orders, printers, cleaningStations, curingStations]);
+
+  const timeMarkers = useMemo(() => {
+    const markers: { hour: number; label: string }[] = [];
+    for (let h = TIMELINE_START_HOUR; h <= TIMELINE_END_HOUR; h += 3) {
+      markers.push({ hour: h, label: `${String(h).padStart(2, "0")}:00` });
+    }
+    return markers;
+  }, []);
+
+  const getBlockColor = (status: Order["status"], isUrgent: boolean) => {
+    if (isUrgent) return "bg-red-500/30";
+    const colorMap: Record<string, string> = {
+      printing: "bg-industrial-500/40",
+      cleaning: "bg-cyan-500/40",
+      curing: "bg-purple-500/40",
+      support: "bg-amber-500/40",
+      qc: "bg-orange-500/40",
+      completed: "bg-green-500/40",
+      pending: "bg-dark-500/40",
+      layout: "bg-blue-500/40",
+    };
+    return colorMap[status] || "bg-dark-500/40";
+  };
+
+  const renderRealtimeView = () => (
+    <>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
         {stats.printerStats.map((ps) => (
           <div
@@ -467,6 +647,233 @@ function CapacityDashboard() {
           <p className="font-mono font-bold text-lg text-purple-400">{stats.activeCurers}</p>
         </div>
       </div>
+    </>
+  );
+
+  const renderScheduleView = () => {
+    interface ScheduleRowProps {
+      name: string;
+      status: string;
+      isRunning: boolean;
+      blocks: any[];
+      stationType: "printer" | "cleaning" | "curing";
+    }
+
+    const ScheduleRow = ({ name, status, isRunning, blocks, stationType }: ScheduleRowProps) => (
+      <div className="flex items-stretch border-b border-dark-700 last:border-b-0">
+        <div className="w-28 flex-shrink-0 p-3 border-r border-dark-700 bg-dark-900/30">
+          <div className="flex items-center justify-between">
+            <p className="font-display font-medium text-dark-100 text-sm">{name}</p>
+            <div className="flex items-center gap-1">
+              {isRunning ? (
+                <span className="flex items-center gap-1 text-[10px] font-mono text-green-400">
+                  <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+                  运行
+                </span>
+              ) : status === "maintenance" ? (
+                <span className="text-[10px] font-mono text-red-400">维护</span>
+              ) : (
+                <span className="text-[10px] font-mono text-dark-500">空闲</span>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 relative h-14 bg-dark-900/50">
+          {timeMarkers.map((marker, idx) => (
+            <div
+              key={idx}
+              className="absolute top-0 bottom-0 border-l border-dark-700/50"
+              style={{ left: `${((marker.hour - TIMELINE_START_HOUR) / (TIMELINE_END_HOUR - TIMELINE_START_HOUR)) * 100}%` }}
+            />
+          ))}
+          {blocks.map((block, idx) => (
+            <div
+              key={`${block.orderId}-${idx}`}
+              className={cn(
+                "absolute top-1.5 bottom-1.5 rounded-sm cursor-pointer transition-all hover:brightness-125 group",
+                getBlockColor(block.status, block.isUrgent),
+                block.isUrgent && "ring-2 ring-red-500 animate-pulse"
+              )}
+              style={{
+                left: `${(block.startMinutes / TIMELINE_TOTAL_MINUTES) * 100}%`,
+                width: `${(block.durationMinutes / TIMELINE_TOTAL_MINUTES) * 100}%`,
+              }}
+            >
+              <div className="absolute z-10 bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                <div className="bg-dark-800 border border-dark-600 rounded-sm p-2 shadow-lg whitespace-nowrap">
+                  <p className="font-mono text-xs text-industrial-400">{block.orderNo}</p>
+                  <p className="text-xs text-dark-200">{block.customerName}</p>
+                  <p className="text-[10px] font-mono text-dark-500">
+                    {block.startTimeStr} - {block.endTimeStr}
+                  </p>
+                  <p className="text-[10px] font-mono text-dark-500">
+                    时长 {Math.round(block.durationMinutes)} 分钟
+                  </p>
+                </div>
+                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-dark-600" />
+              </div>
+              <div className="h-full flex items-center px-1 overflow-hidden">
+                <span className="text-[10px] font-mono text-dark-100 truncate">
+                  {block.orderNo.slice(-4)}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="w-16 flex-shrink-0 p-3 border-l border-dark-700 bg-dark-900/30 flex items-center justify-center">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={blocks.some((b) => b.isUrgent)}
+              onChange={(e) => {
+                const block = blocks.find((b) => b.isUrgent) || blocks[0];
+                if (block) {
+                  toggleUrgent(block.orderId);
+                }
+              }}
+              className="w-3.5 h-3.5 rounded-sm border-dark-600 bg-dark-800 text-red-500 focus:ring-red-500 focus:ring-offset-0"
+            />
+            <Zap className={cn(
+              "w-3.5 h-3.5",
+              blocks.some((b) => b.isUrgent) ? "text-red-400" : "text-dark-600"
+            )} />
+          </label>
+        </div>
+      </div>
+    );
+
+    return (
+      <div className="border border-dark-700 rounded-sm overflow-hidden">
+        <div className="flex items-stretch bg-dark-800 border-b border-dark-700">
+          <div className="w-28 flex-shrink-0 p-2 border-r border-dark-700">
+            <p className="text-[10px] font-mono text-dark-500 uppercase">设备</p>
+          </div>
+          <div className="flex-1 relative h-8">
+            {timeMarkers.map((marker, idx) => (
+              <div
+                key={idx}
+                className="absolute top-0 bottom-0 flex items-center justify-center"
+                style={{
+                  left: `${((marker.hour - TIMELINE_START_HOUR) / (TIMELINE_END_HOUR - TIMELINE_START_HOUR)) * 100}%`,
+                  transform: "translateX(-50%)",
+                }}
+              >
+                <span className="text-[10px] font-mono text-dark-500">{marker.label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="w-16 flex-shrink-0 p-2 border-l border-dark-700 text-center">
+            <p className="text-[10px] font-mono text-dark-500 uppercase">加急</p>
+          </div>
+        </div>
+
+        <div className="mb-2">
+          <div className="px-3 py-1.5 bg-dark-800/50 border-b border-dark-700">
+            <p className="text-xs font-display font-medium text-industrial-400">
+              打印机 ({printers.length}台)
+            </p>
+          </div>
+          {scheduleData.printers.map((p) => (
+            <ScheduleRow
+              key={p.id}
+              name={p.name}
+              status={p.status}
+              isRunning={p.isRunning}
+              blocks={p.blocks}
+              stationType="printer"
+            />
+          ))}
+        </div>
+
+        <div className="mb-2">
+          <div className="px-3 py-1.5 bg-dark-800/50 border-y border-dark-700">
+            <p className="text-xs font-display font-medium text-cyan-400">
+              清洗工位 ({cleaningStations.length}台)
+            </p>
+          </div>
+          {scheduleData.cleaningStations.map((s) => (
+            <ScheduleRow
+              key={s.id}
+              name={s.name}
+              status={s.status}
+              isRunning={s.isRunning}
+              blocks={s.blocks}
+              stationType="cleaning"
+            />
+          ))}
+        </div>
+
+        <div>
+          <div className="px-3 py-1.5 bg-dark-800/50 border-y border-dark-700">
+            <p className="text-xs font-display font-medium text-purple-400">
+              固化工位 ({curingStations.length}台)
+            </p>
+          </div>
+          {scheduleData.curingStations.map((s) => (
+            <ScheduleRow
+              key={s.id}
+              name={s.name}
+              status={s.status}
+              isRunning={s.isRunning}
+              blocks={s.blocks}
+              stationType="curing"
+            />
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="card-industrial p-5">
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <Gauge className="w-5 h-5 text-industrial-400" />
+          <h3 className="font-display font-semibold text-lg text-dark-50">
+            实时产能看板
+          </h3>
+          {isToday && (
+            <span className="px-2 py-0.5 text-[10px] font-mono bg-green-500/15 text-green-400 rounded-sm border border-green-500/30">
+              LIVE
+            </span>
+          )}
+          <div className="flex items-center bg-dark-800 border border-dark-700 rounded-sm p-0.5">
+            <button
+              onClick={() => setActiveTab("realtime")}
+              className={cn(
+                "px-3 py-1 text-xs font-mono rounded-sm transition-colors",
+                activeTab === "realtime"
+                  ? "bg-industrial-500/20 text-industrial-400"
+                  : "text-dark-400 hover:text-dark-200"
+              )}
+            >
+              实时数据
+            </button>
+            <button
+              onClick={() => setActiveTab("schedule")}
+              className={cn(
+                "px-3 py-1 text-xs font-mono rounded-sm transition-colors",
+                activeTab === "schedule"
+                  ? "bg-industrial-500/20 text-industrial-400"
+                  : "text-dark-400 hover:text-dark-200"
+              )}
+            >
+              生产排程
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-dark-500" />
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="input-industrial text-xs py-1.5 px-2"
+          />
+        </div>
+      </div>
+
+      {activeTab === "realtime" ? renderRealtimeView() : renderScheduleView()}
     </div>
   );
 }

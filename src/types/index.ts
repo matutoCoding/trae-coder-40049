@@ -45,6 +45,7 @@ export interface Order {
   unitPrice: number;
   totalPrice: number;
   status: OrderStatus;
+  isUrgent?: boolean;
   createdAt: string;
   updatedAt: string;
   remark: string;
@@ -52,6 +53,14 @@ export interface Order {
   assignedPrinterId?: string;
   assignedCleaningId?: string;
   assignedCuringId?: string;
+  estimatedDuration?: {
+    printing: number;
+    cleaning: number;
+    curing: number;
+    support: number;
+    qc: number;
+    shipping: number;
+  };
   qcResult?: {
     passed: boolean;
     surfaceScore: number;
@@ -61,6 +70,7 @@ export interface Order {
     inspectedAt: string;
   };
   reworkCount?: number;
+  printDuration?: number;
   review?: {
     rating: number;
     comment: string;
@@ -71,6 +81,8 @@ export interface Order {
     trackingNo: string;
     shippedAt: string;
     deliveredAt?: string;
+    confirmedBy?: string;
+    confirmedAt?: string;
   };
 }
 

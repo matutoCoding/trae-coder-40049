@@ -7,7 +7,7 @@ import type {
   DailyStats,
 } from "../types";
 
-export const mockOrders: Order[] = [
+const rawOrders: Omit<Order, "isUrgent" | "estimatedDuration">[] = [
   {
     id: "ord-001",
     orderNo: "SLA20260617001",
@@ -122,6 +122,7 @@ export const mockOrders: Order[] = [
       { status: "layout", statusLabel: "排版中", timestamp: "2026-06-15 14:00:00", operator: "李工", remark: "模型排版完成，特殊角度摆放" },
       { status: "printing", statusLabel: "打印中", timestamp: "2026-06-15 16:00:00", operator: "王操作员", remark: "开始打印" },
       { status: "cleaning", statusLabel: "清洗中", timestamp: "2026-06-17 08:00:00", operator: "赵师傅", remark: "清洗完成" },
+      { status: "curing", statusLabel: "固化中", timestamp: "2026-06-17 08:40:00", operator: "系统", remark: "转入UV固化" },
       { status: "support", statusLabel: "去支撑", timestamp: "2026-06-17 11:30:00", operator: "陈技师", remark: "转入去支撑工序" },
     ],
     assignedPrinterId: "prt-003",
@@ -205,6 +206,7 @@ export const mockOrders: Order[] = [
       { status: "layout", statusLabel: "排版中", timestamp: "2026-06-14 16:00:00", operator: "李工", remark: "排版完成" },
       { status: "printing", statusLabel: "打印中", timestamp: "2026-06-14 18:00:00", operator: "王操作员", remark: "开始打印" },
       { status: "cleaning", statusLabel: "清洗中", timestamp: "2026-06-16 10:00:00", operator: "赵师傅", remark: "清洗完成" },
+      { status: "curing", statusLabel: "固化中", timestamp: "2026-06-16 10:30:00", operator: "系统", remark: "转入UV固化" },
       { status: "support", statusLabel: "去支撑", timestamp: "2026-06-16 14:00:00", operator: "陈技师", remark: "去支撑打磨完成" },
       { status: "qc", statusLabel: "质检中", timestamp: "2026-06-17 09:00:00", operator: "刘质检", remark: "正在进行精度检验" },
     ],
@@ -242,19 +244,20 @@ export const mockOrders: Order[] = [
     unitPrice: 1250,
     totalPrice: 1250,
     status: "completed",
-    createdAt: "2026-06-12 11:00:00",
-    updatedAt: "2026-06-16 18:00:00",
-    remark: "概念验证原型，需打磨抛光",
+    createdAt: "2026-06-14 09:00:00",
+    updatedAt: "2026-06-16 10:30:00",
+    remark: "概念原型验证",
     timeline: [
-      { status: "pending", statusLabel: "待审核", timestamp: "2026-06-12 11:00:00", operator: "客户", remark: "客户提交订单" },
-      { status: "reviewed", statusLabel: "已审核", timestamp: "2026-06-12 14:00:00", operator: "张经理", remark: "报价确认" },
-      { status: "layout", statusLabel: "排版中", timestamp: "2026-06-12 15:00:00", operator: "李工", remark: "排版完成" },
-      { status: "printing", statusLabel: "打印中", timestamp: "2026-06-12 16:00:00", operator: "王操作员", remark: "开始打印" },
-      { status: "cleaning", statusLabel: "清洗中", timestamp: "2026-06-14 09:00:00", operator: "赵师傅", remark: "清洗完成" },
-      { status: "support", statusLabel: "去支撑", timestamp: "2026-06-14 14:00:00", operator: "陈技师", remark: "去支撑抛光完成" },
-      { status: "qc", statusLabel: "质检中", timestamp: "2026-06-15 10:00:00", operator: "刘质检", remark: "质检通过" },
-      { status: "shipping", statusLabel: "发货中", timestamp: "2026-06-15 16:00:00", operator: "物流", remark: "顺丰快递已取件" },
-      { status: "completed", statusLabel: "已完成", timestamp: "2026-06-16 18:00:00", operator: "系统", remark: "客户确认签收" },
+      { status: "pending", statusLabel: "待审核", timestamp: "2026-06-14 09:00:00", operator: "客户", remark: "客户提交订单" },
+      { status: "reviewed", statusLabel: "已审核", timestamp: "2026-06-14 10:30:00", operator: "张经理", remark: "报价确认" },
+      { status: "layout", statusLabel: "排版中", timestamp: "2026-06-14 13:00:00", operator: "李工", remark: "排版完成" },
+      { status: "printing", statusLabel: "打印中", timestamp: "2026-06-14 14:30:00", operator: "王操作员", remark: "开始打印" },
+      { status: "cleaning", statusLabel: "清洗中", timestamp: "2026-06-15 08:00:00", operator: "赵师傅", remark: "清洗完成" },
+      { status: "curing", statusLabel: "固化中", timestamp: "2026-06-15 08:30:00", operator: "系统", remark: "转入UV固化" },
+      { status: "support", statusLabel: "去支撑", timestamp: "2026-06-15 10:00:00", operator: "陈技师", remark: "去支撑完成" },
+      { status: "qc", statusLabel: "质检中", timestamp: "2026-06-15 11:00:00", operator: "刘质检", remark: "开始质检" },
+      { status: "shipping", statusLabel: "发货中", timestamp: "2026-06-15 16:30:00", operator: "系统", remark: "已发货" },
+      { status: "completed", statusLabel: "已完成", timestamp: "2026-06-16 10:30:00", operator: "客户", remark: "客户已签收" },
     ],
     qcResult: {
       passed: true,
@@ -269,6 +272,13 @@ export const mockOrders: Order[] = [
       trackingNo: "SF1234567890123",
       shippedAt: "2026-06-15 16:30:00",
       deliveredAt: "2026-06-16 10:30:00",
+      confirmedBy: "成都工业设计研究院",
+      confirmedAt: "2026-06-16 10:30:00",
+    },
+    review: {
+      rating: 5,
+      comment: "打印质量非常好，表面光滑，尺寸精度符合要求，包装也很仔细。下次还会继续合作！",
+      reviewedAt: "2026-06-16 11:00:00",
     },
   },
   {
@@ -304,6 +314,22 @@ export const mockOrders: Order[] = [
     ],
   },
 ];
+
+const enhanceOrders = (orders: Omit<Order, "isUrgent" | "estimatedDuration">[]): Order[] =>
+  orders.map((o, idx) => ({
+    ...o,
+    isUrgent: idx === 0 || idx === 3,
+    estimatedDuration: {
+      printing: Math.round(480 + o.modelFiles.reduce((s, f) => s + f.volume, 0) * 2),
+      cleaning: 900,
+      curing: 2400,
+      support: 1800,
+      qc: 1200,
+      shipping: 86400,
+    },
+  }));
+
+export const mockOrders: Order[] = enhanceOrders(rawOrders);
 
 export const mockPrinters: Printer[] = [
   {
@@ -390,9 +416,7 @@ export const mockPrinters: Printer[] = [
     id: "prt-005",
     name: "SLA-05",
     model: "Form 3+",
-    status: "paused",
-    currentOrderId: "ord-002",
-    currentOrderNo: "SLA20260617002",
+    status: "idle",
     progress: 100,
     resinLevel: 55,
     resinType: "高韧性光敏树脂",
@@ -425,11 +449,9 @@ export const mockCleaningStations: CleaningStation[] = [
   {
     id: "cls-002",
     name: "清洗工位B",
-    status: "completed",
-    orderId: "ord-003",
-    orderNo: "SLA20260617003",
+    status: "idle",
     alcoholConcentration: 85,
-    cleaningTime: 1800,
+    cleaningTime: 0,
     remainingTime: 0,
     basketId: "B-017",
     temperature: 25.8,

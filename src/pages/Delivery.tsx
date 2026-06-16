@@ -16,6 +16,7 @@ import {
   Eye,
   Star,
   AlertTriangle,
+  X,
 } from "lucide-react";
 import { useFactoryStore } from "../store/useFactoryStore";
 import { OrderStatusBadge } from "../components/StatusBadges";
@@ -32,12 +33,16 @@ export default function Delivery() {
   const orders = useFactoryStore((s) => s.orders).filter((o) =>
     ["qc", "shipping", "completed"].includes(o.status)
   );
+  const shipOrder = useFactoryStore((s) => s.shipOrder);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(
     orders.find((o) => o.status === "qc" || o.status === "shipping")?.id || null
   );
   const [carrier, setCarrier] = useState("顺丰速运");
   const [trackingNo, setTrackingNo] = useState("");
   const [showSignature, setShowSignature] = useState(false);
+  const [showShipModal, setShowShipModal] = useState(false);
+  const [modalCarrier, setModalCarrier] = useState("顺丰速运");
+  const [modalTrackingNo, setModalTrackingNo] = useState("");
 
   const readyOrders = orders.filter((o) => o.status === "qc");
   const shippingOrders = orders.filter((o) => o.status === "shipping");
@@ -48,6 +53,25 @@ export default function Delivery() {
     const prefix = carrier === "顺丰速运" ? "SF" : carrier === "京东物流" ? "JD" : "YT";
     const random = Math.random().toString().slice(2, 14);
     setTrackingNo(`${prefix}${random}`);
+  };
+
+  const generateModalTrackingNo = () => {
+    const prefix = modalCarrier === "顺丰速运" ? "SF" : modalCarrier === "京东物流" ? "JD" : "YT";
+    const random = Math.random().toString().slice(2, 14);
+    setModalTrackingNo(`${prefix}${random}`);
+  };
+
+  const handleOpenShipModal = () => {
+    setModalCarrier("顺丰速运");
+    setModalTrackingNo("");
+    setShowShipModal(true);
+  };
+
+  const handleConfirmShip = () => {
+    if (selectedOrder && modalCarrier && modalTrackingNo) {
+      shipOrder(selectedOrder.id, modalCarrier, modalTrackingNo);
+      setShowShipModal(false);
+    }
   };
 
   return (
@@ -229,51 +253,87 @@ export default function Delivery() {
                   <Truck className="w-4 h-4 text-industrial-400" />
                   物流信息
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="label-industrial">快递公司</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {carriers.map((c) => (
+                {selectedOrder.shippingInfo ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="p-3 bg-dark-900/50 border border-dark-700 rounded-sm">
+                        <p className="text-xs font-mono text-dark-500 mb-1">承运商</p>
+                        <p className="font-display text-dark-100">{selectedOrder.shippingInfo.carrier}</p>
+                      </div>
+                      <div className="p-3 bg-dark-900/50 border border-dark-700 rounded-sm">
+                        <p className="text-xs font-mono text-dark-500 mb-1">运单号</p>
+                        <p className="font-mono text-industrial-400">{selectedOrder.shippingInfo.trackingNo}</p>
+                      </div>
+                      <div className="p-3 bg-dark-900/50 border border-dark-700 rounded-sm">
+                        <p className="text-xs font-mono text-dark-500 mb-1">发货时间</p>
+                        <p className="font-mono text-dark-200">{selectedOrder.shippingInfo.shippedAt}</p>
+                      </div>
+                    </div>
+                    {selectedOrder.shippingInfo.confirmedBy && selectedOrder.shippingInfo.confirmedAt && (
+                      <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-sm">
+                        <h4 className="font-display font-medium text-green-400 mb-2 flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4" />
+                          客户确认信息
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <p className="text-xs font-mono text-dark-500">签收人</p>
+                            <p className="font-display text-dark-100">{selectedOrder.shippingInfo.confirmedBy}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-mono text-dark-500">签收时间</p>
+                            <p className="font-mono text-dark-200">{selectedOrder.shippingInfo.confirmedAt}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="label-industrial">快递公司</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {carriers.map((c) => (
+                          <button
+                            key={c.value}
+                            onClick={() => setCarrier(c.value)}
+                            className={cn(
+                              "flex items-center gap-2 p-2.5 rounded-sm border transition-all text-left",
+                              carrier === c.value
+                                ? "bg-industrial-500/10 border-industrial-500/50"
+                                : "bg-dark-900/50 border-dark-700 hover:border-dark-600"
+                            )}
+                          >
+                            <span className={cn("font-mono font-bold text-sm", c.color)}>
+                              {c.logo}
+                            </span>
+                            <span className="text-sm font-display text-dark-200">
+                              {c.label}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="label-industrial">运单号</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="输入或自动生成运单号"
+                          value={trackingNo}
+                          onChange={(e) => setTrackingNo(e.target.value)}
+                          className="input-industrial flex-1"
+                        />
                         <button
-                          key={c.value}
-                          onClick={() => setCarrier(c.value)}
-                          className={cn(
-                            "flex items-center gap-2 p-2.5 rounded-sm border transition-all text-left",
-                            carrier === c.value
-                              ? "bg-industrial-500/10 border-industrial-500/50"
-                              : "bg-dark-900/50 border-dark-700 hover:border-dark-600"
-                          )}
+                          onClick={generateTrackingNo}
+                          className="btn-secondary px-3"
                         >
-                          <span className={cn("font-mono font-bold text-sm", c.color)}>
-                            {c.logo}
-                          </span>
-                          <span className="text-sm font-display text-dark-200">
-                            {c.label}
-                          </span>
+                          <Plus className="w-4 h-4" />
                         </button>
-                      ))}
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    <label className="label-industrial">运单号</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="输入或自动生成运单号"
-                        value={trackingNo}
-                        onChange={(e) => setTrackingNo(e.target.value)}
-                        defaultValue={selectedOrder.shippingInfo?.trackingNo}
-                        className="input-industrial flex-1"
-                      />
-                      <button
-                        onClick={generateTrackingNo}
-                        className="btn-secondary px-3"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                )}
 
                 <div className="mt-4 p-4 bg-dark-900/50 border border-dark-700 rounded-sm">
                   <h4 className="font-display font-medium text-dark-200 mb-3">物流跟踪</h4>
@@ -297,12 +357,12 @@ export default function Delivery() {
                           label: "运输中",
                           time: "2026-06-16 20:15:00",
                           done: true,
-                          active: true,
+                          active: selectedOrder.status === "shipping",
                         },
                         {
                           label: "派送中",
                           time: "预计 2026-06-17 14:00",
-                          done: false,
+                          done: selectedOrder.status === "completed",
                           active: false,
                         },
                         {
@@ -358,10 +418,15 @@ export default function Delivery() {
                     <FileText className="w-4 h-4" />
                     质检报告
                   </button>
-                  <button className="btn-primary flex-1 flex items-center justify-center gap-1.5">
-                    <Send className="w-4 h-4" />
-                    确认发货
-                  </button>
+                  {selectedOrder.status === "qc" && (
+                    <button
+                      onClick={handleOpenShipModal}
+                      className="btn-primary flex-1 flex items-center justify-center gap-1.5"
+                    >
+                      <Send className="w-4 h-4" />
+                      生成运单号并发货
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -537,6 +602,97 @@ export default function Delivery() {
           )}
         </div>
       </div>
+
+      {showShipModal && selectedOrder && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="card-industrial p-6 w-full max-w-lg mx-4">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-display font-semibold text-dark-100 text-lg flex items-center gap-2">
+                <Send className="w-5 h-5 text-industrial-400" />
+                确认发货
+              </h3>
+              <button
+                onClick={() => setShowShipModal(false)}
+                className="p-1 hover:bg-dark-700 rounded-sm transition-colors"
+              >
+                <X className="w-5 h-5 text-dark-400" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-3 bg-industrial-500/10 border border-industrial-500/20 rounded-sm">
+                <p className="text-xs font-mono text-dark-500">订单号</p>
+                <p className="font-mono text-industrial-400">{selectedOrder.orderNo}</p>
+              </div>
+
+              <div>
+                <label className="label-industrial">选择承运商</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {carriers.map((c) => (
+                    <button
+                      key={c.value}
+                      onClick={() => setModalCarrier(c.value)}
+                      className={cn(
+                        "flex items-center gap-2 p-3 rounded-sm border transition-all text-left",
+                        modalCarrier === c.value
+                          ? "bg-industrial-500/10 border-industrial-500/50"
+                          : "bg-dark-900/50 border-dark-700 hover:border-dark-600"
+                      )}
+                    >
+                      <span className={cn("font-mono font-bold text-base", c.color)}>
+                        {c.logo}
+                      </span>
+                      <span className="text-sm font-display text-dark-200">
+                        {c.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="label-industrial">运单号</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="输入或点击右侧自动生成运单号"
+                    value={modalTrackingNo}
+                    onChange={(e) => setModalTrackingNo(e.target.value)}
+                    className="input-industrial flex-1"
+                  />
+                  <button
+                    onClick={generateModalTrackingNo}
+                    className="btn-secondary px-3"
+                    title="自动生成运单号"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowShipModal(false)}
+                  className="btn-secondary flex-1"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleConfirmShip}
+                  disabled={!modalTrackingNo}
+                  className={cn(
+                    "btn-primary flex-1 flex items-center justify-center gap-2",
+                    !modalTrackingNo && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  <Send className="w-4 h-4" />
+                  确认发货
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

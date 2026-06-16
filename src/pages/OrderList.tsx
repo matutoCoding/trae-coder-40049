@@ -16,6 +16,7 @@ import {
   Layers,
   Box,
   AlertTriangle,
+  Wrench,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useFactoryStore } from "../store/useFactoryStore";
@@ -40,6 +41,7 @@ const statusFilters: { value: OrderStatus | "all"; label: string }[] = [
 export default function OrderList() {
   const navigate = useNavigate();
   const orders = useFactoryStore((s) => s.orders);
+  const getCostBreakdown = useFactoryStore((s) => s.getCostBreakdown);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -152,6 +154,7 @@ export default function OrderList() {
                 <th>材料</th>
                 <th>数量</th>
                 <th>金额</th>
+                <th>成本/毛利</th>
                 <th>创建时间</th>
                 <th>状态</th>
                 <th>操作</th>
@@ -198,6 +201,30 @@ export default function OrderList() {
                     <span className="font-mono font-semibold text-amber-400">
                       ¥{order.totalPrice.toLocaleString()}
                     </span>
+                  </td>
+                  <td>
+                    {(() => {
+                      const cost = getCostBreakdown(order.id);
+                      const marginColor = cost.profitMargin >= 30 ? "text-green-400" : cost.profitMargin >= 10 ? "text-amber-400" : "text-red-400";
+                      return (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className={cn("font-mono font-semibold", marginColor)}>
+                              {cost.profitMargin}%
+                            </span>
+                            <span className="text-xs font-mono text-dark-500">
+                              ¥{cost.profit.toLocaleString()}
+                            </span>
+                            {(order.reworkCount || 0) > 0 && (
+                              <span className="inline-flex items-center gap-0.5 px-1 py-0.5 text-[10px] font-mono bg-red-500/15 text-red-400 rounded-sm border border-red-500/30">
+                                <Wrench className="w-2.5 h-2.5" />
+                                {order.reworkCount}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td>
                     <span className="text-xs font-mono text-dark-500">

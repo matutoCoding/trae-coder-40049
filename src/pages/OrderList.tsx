@@ -15,6 +15,7 @@ import {
   DollarSign,
   Layers,
   Box,
+  AlertTriangle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useFactoryStore } from "../store/useFactoryStore";
@@ -29,6 +30,7 @@ const statusFilters: { value: OrderStatus | "all"; label: string }[] = [
   { value: "layout", label: "排版中" },
   { value: "printing", label: "打印中" },
   { value: "cleaning", label: "清洗中" },
+  { value: "curing", label: "固化中" },
   { value: "support", label: "去支撑" },
   { value: "qc", label: "质检中" },
   { value: "shipping", label: "发货中" },
@@ -203,7 +205,15 @@ export default function OrderList() {
                     </span>
                   </td>
                   <td>
-                    <OrderStatusBadge status={order.status} />
+                    <div className="flex items-center gap-1.5">
+                      <OrderStatusBadge status={order.status} />
+                      {(order.reworkCount || 0) >= 2 && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-mono bg-red-500/15 text-red-400 rounded-sm border border-red-500/30">
+                          <AlertTriangle className="w-3 h-3" />
+                          高风险
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <button className="text-industrial-400 hover:text-industrial-300 text-sm font-display flex items-center gap-1">

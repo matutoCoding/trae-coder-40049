@@ -30,6 +30,11 @@ const orderStatusConfig: Record<
     className: "bg-cyan-500/15 text-cyan-400 border border-cyan-500/30",
     dotColor: "bg-cyan-500",
   },
+  curing: {
+    label: "固化中",
+    className: "bg-purple-500/15 text-purple-400 border border-purple-500/30",
+    dotColor: "bg-purple-500 animate-pulse",
+  },
   support: {
     label: "去支撑",
     className: "bg-orange-500/15 text-orange-400 border border-orange-500/30",

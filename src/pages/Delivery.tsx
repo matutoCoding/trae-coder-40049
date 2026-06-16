@@ -430,7 +430,7 @@ export default function Delivery() {
                     <Star className="w-4 h-4 text-amber-400" />
                     客户评价
                   </h3>
-                  {selectedOrder.status === "completed" ? (
+                  {selectedOrder.status === "completed" && selectedOrder.review ? (
                     <div className="space-y-3">
                       <div className="flex items-center gap-1">
                         {[1, 2, 3, 4, 5].map((s) => (
@@ -438,23 +438,31 @@ export default function Delivery() {
                             key={s}
                             className={cn(
                               "w-6 h-6",
-                              s <= 5
+                              s <= selectedOrder.review!.rating
                                 ? "text-amber-400 fill-amber-400"
                                 : "text-dark-600"
                             )}
                           />
                         ))}
-                        <span className="ml-2 font-mono text-sm text-dark-400">5.0 分</span>
+                        <span className="ml-2 font-mono text-sm text-dark-400">
+                          {selectedOrder.review.rating}.0 分
+                        </span>
                       </div>
                       <div className="p-3 bg-dark-900/50 border border-dark-700 rounded-sm">
                         <p className="text-sm font-display text-dark-200">
-                          "打印质量非常好，表面光滑，尺寸精度符合要求，包装也很仔细。
-                          下次还会继续合作！"
+                          "{selectedOrder.review.comment}"
                         </p>
                         <p className="text-xs font-mono text-dark-500 mt-2 text-right">
-                          — {selectedOrder.customerName}
+                          — {selectedOrder.customerName} · {selectedOrder.review.reviewedAt}
                         </p>
                       </div>
+                    </div>
+                  ) : selectedOrder.status === "completed" ? (
+                    <div className="text-center py-6">
+                      <Star className="w-10 h-10 text-dark-600 mx-auto mb-2" />
+                      <p className="text-sm font-display text-dark-500">
+                        客户尚未评价
+                      </p>
                     </div>
                   ) : (
                     <div className="text-center py-6">

@@ -24,6 +24,7 @@ export type OrderStatus =
   | "layout"
   | "printing"
   | "cleaning"
+  | "curing"
   | "support"
   | "qc"
   | "shipping"
@@ -58,6 +59,12 @@ export interface Order {
     defects: string[];
     inspector: string;
     inspectedAt: string;
+  };
+  reworkCount?: number;
+  review?: {
+    rating: number;
+    comment: string;
+    reviewedAt: string;
   };
   shippingInfo?: {
     carrier: string;

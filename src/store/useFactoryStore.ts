@@ -39,6 +39,8 @@ interface FactoryState {
   advanceToCleaning: (orderId: string, cleaningStationId: string) => void;
   advanceToCuring: (orderId: string, curingStationId: string) => void;
   advanceSimple: (orderId: string, nextStatus: OrderStatus) => void;
+  reworkOrder: (orderId: string, reason: string) => void;
+  addReview: (orderId: string, rating: number, comment: string) => void;
   refillResin: (printerId: string, amountLiters: number) => void;
   changeResin: (printerId: string, resinId: string) => void;
   updateResinStock: (resinId: string, delta: number) => void;
@@ -73,6 +75,7 @@ export const useFactoryStore = create<FactoryState>((set, get) => ({
       layout: "排版中",
       printing: "打印中",
       cleaning: "清洗中",
+      curing: "固化中",
       support: "去支撑",
       qc: "质检中",
       shipping: "发货中",
@@ -269,17 +272,17 @@ export const useFactoryStore = create<FactoryState>((set, get) => ({
         o.id === orderId
           ? {
               ...o,
-              status: "support" as OrderStatus,
+              status: "curing" as OrderStatus,
               assignedCuringId: curingStationId,
               updatedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
               timeline: [
                 ...o.timeline,
                 {
-                  status: "support",
-                  statusLabel: "去支撑",
+                  status: "curing",
+                  statusLabel: "固化中",
                   timestamp: new Date().toISOString().replace("T", " ").slice(0, 19),
                   operator: "系统",
-                  remark: `清洗完成，转入 ${station.name} UV固化并去支撑`,
+                  remark: `清洗完成，转入 ${station.name} UV固化`,
                 },
               ],
             }
@@ -322,6 +325,7 @@ export const useFactoryStore = create<FactoryState>((set, get) => ({
       layout: "排版中",
       printing: "打印中",
       cleaning: "清洗中",
+      curing: "固化中",
       support: "去支撑",
       qc: "质检中",
       shipping: "发货中",
@@ -387,6 +391,81 @@ export const useFactoryStore = create<FactoryState>((set, get) => ({
     set((state) => ({
       resins: state.resins.map((r) =>
         r.id === resinId ? { ...r, stock: Math.max(0, r.stock + delta) } : r
+      ),
+    }));
+  },
+
+  reworkOrder: (orderId, reason) => {
+    const state = get();
+    const order = state.orders.find((o) => o.id === orderId);
+    if (!order) return;
+
+    const currentReworkCount = order.reworkCount || 0;
+    const newReworkCount = currentReworkCount + 1;
+
+    const releasePrinterId = order.assignedPrinterId;
+    const releaseCleaningId = order.assignedCleaningId;
+    const releaseCuringId = order.assignedCuringId;
+
+    set((state) => ({
+      orders: state.orders.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: "layout" as OrderStatus,
+              reworkCount: newReworkCount,
+              assignedPrinterId: undefined,
+              assignedCleaningId: undefined,
+              assignedCuringId: undefined,
+              qcResult: undefined,
+              updatedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
+              timeline: [
+                ...o.timeline,
+                {
+                  status: "layout",
+                  statusLabel: "排版中",
+                  timestamp: new Date().toISOString().replace("T", " ").slice(0, 19),
+                  operator: "系统",
+                  remark: `质检不合格退回返修（第${newReworkCount}次），原因：${reason}`,
+                },
+              ],
+            }
+          : o
+      ),
+      printers: state.printers.map((p) => {
+        if (p.id === releasePrinterId) {
+          return { ...p, status: "idle" as const, currentOrderId: undefined, currentOrderNo: undefined, progress: 0 };
+        }
+        return p;
+      }),
+      cleaningStations: state.cleaningStations.map((s) => {
+        if (s.id === releaseCleaningId) {
+          return { ...s, status: "idle" as const, orderId: undefined, orderNo: undefined, remainingTime: 0 };
+        }
+        return s;
+      }),
+      curingStations: state.curingStations.map((s) => {
+        if (s.id === releaseCuringId) {
+          return { ...s, status: "idle" as const, orderId: undefined, orderNo: undefined, remainingTime: 0 };
+        }
+        return s;
+      }),
+    }));
+  },
+
+  addReview: (orderId, rating, comment) => {
+    set((state) => ({
+      orders: state.orders.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              review: {
+                rating,
+                comment,
+                reviewedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
+              },
+            }
+          : o
       ),
     }));
   },

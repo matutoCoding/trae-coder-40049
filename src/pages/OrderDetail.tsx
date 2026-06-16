@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   Printer,
   Droplets,
+  Sun,
   Wrench,
   Truck,
   Package,
@@ -37,6 +38,7 @@ const processSteps = [
   { key: "layout", label: "排版中", icon: Layers },
   { key: "printing", label: "打印中", icon: Printer },
   { key: "cleaning", label: "清洗中", icon: Droplets },
+  { key: "curing", label: "固化中", icon: Sun },
   { key: "support", label: "去支撑", icon: Wrench },
   { key: "qc", label: "质检中", icon: Star },
   { key: "shipping", label: "发货中", icon: Truck },
@@ -54,6 +56,7 @@ export default function OrderDetail() {
   const advanceToPrinting = useFactoryStore((s) => s.advanceToPrinting);
   const advanceToCleaning = useFactoryStore((s) => s.advanceToCleaning);
   const advanceToCuring = useFactoryStore((s) => s.advanceToCuring);
+  const updateOrderStatus = useFactoryStore((s) => s.updateOrderStatus);
 
   const [activeTab, setActiveTab] = useState<"info" | "files" | "timeline" | "messages">("info");
   const [deviceSelector, setDeviceSelector] = useState<"printer" | "cleaning" | "curing" | null>(null);
@@ -99,6 +102,12 @@ export default function OrderDetail() {
                 订单详情
               </h1>
               <OrderStatusBadge status={order.status} />
+              {(order.reworkCount || 0) >= 2 && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-mono bg-red-500/15 text-red-400 rounded-sm border border-red-500/30">
+                  <AlertTriangle className="w-3 h-3" />
+                  高风险（返修{order.reworkCount}次）
+                </span>
+              )}
             </div>
             <p className="text-sm font-mono text-dark-500 mt-1">
               订单号: {order.orderNo} | 创建于 {order.createdAt}
@@ -128,7 +137,7 @@ export default function OrderDetail() {
               maxWidth: "calc(100% - 64px)",
             }}
           />
-          <div className="grid grid-cols-9 gap-2 relative">
+          <div className="grid grid-cols-10 gap-2 relative">
             {processSteps.map((step, idx) => {
               const isCompleted = idx < currentStepIndex;
               const isActive = idx === currentStepIndex;
@@ -396,6 +405,37 @@ export default function OrderDetail() {
                       </div>
                     </div>
                   )}
+
+                  {order.review && (
+                    <div>
+                      <h4 className="font-display font-semibold text-dark-100 mb-3 flex items-center gap-2">
+                        <Star className="w-4 h-4 text-amber-400" />
+                        客户评价
+                      </h4>
+                      <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-sm">
+                        <div className="flex items-center gap-1 mb-2">
+                          {[1, 2, 3, 4, 5].map((s) => (
+                            <Star
+                              key={s}
+                              className={cn(
+                                "w-5 h-5",
+                                s <= order.review!.rating
+                                  ? "text-amber-400 fill-amber-400"
+                                  : "text-dark-600"
+                              )}
+                            />
+                          ))}
+                          <span className="ml-2 font-mono text-sm text-amber-400">
+                            {order.review.rating}.0 分
+                          </span>
+                        </div>
+                        <p className="text-sm text-dark-200">"{order.review.comment}"</p>
+                        <p className="text-xs font-mono text-dark-500 mt-2">
+                          — {order.customerName} · {order.review.reviewedAt}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -548,7 +588,7 @@ export default function OrderDetail() {
                     } else if (nextStep.key === "cleaning") {
                       setDeviceSelector("cleaning");
                       setSelectedDeviceId(null);
-                    } else if (nextStep.key === "support") {
+                    } else if (nextStep.key === "curing") {
                       setDeviceSelector("curing");
                       setSelectedDeviceId(null);
                     } else {
@@ -735,10 +775,17 @@ export default function OrderDetail() {
                 <Calendar className="w-4 h-4" />
                 预约生产
               </button>
-              <button className="btn-secondary w-full flex items-center justify-center gap-2">
-                <Printer className="w-4 h-4" />
-                发送至排版
-              </button>
+              {order.status === "reviewed" && (
+                <button
+                  onClick={() => {
+                    updateOrderStatus(order.id, "layout", "系统", "已审核，发送至排版");
+                  }}
+                  className="btn-secondary w-full flex items-center justify-center gap-2"
+                >
+                  <Printer className="w-4 h-4" />
+                  发送至排版
+                </button>
+              )}
             </div>
           </div>
         </div>

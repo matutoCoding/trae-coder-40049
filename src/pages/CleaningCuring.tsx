@@ -29,6 +29,7 @@ export default function CleaningCuring() {
   const orders = useFactoryStore((s) => s.orders);
   const updateCleaningStation = useFactoryStore((s) => s.updateCleaningStation);
   const updateCuringStation = useFactoryStore((s) => s.updateCuringStation);
+  const advanceSimple = useFactoryStore((s) => s.advanceSimple);
   const store = useFactoryStore;
 
   const [selectedTab, setSelectedTab] = useState<"cleaning" | "curing">("cleaning");
@@ -59,7 +60,14 @@ export default function CleaningCuring() {
       state.curingStations.forEach((s) => {
         if (s.status === "curing" && s.remainingTime > 0) {
           if (s.remainingTime - 1 === 0) {
-            updateCuringStation(s.id, { remainingTime: 0, status: "completed", orderId: undefined });
+            updateCuringStation(s.id, { remainingTime: 0, status: "idle", orderId: undefined, orderNo: undefined });
+            if (s.orderId) {
+              const currentState = store.getState();
+              const order = currentState.orders.find((o) => o.id === s.orderId);
+              if (order && order.status === "curing") {
+                store.getState().advanceSimple(s.orderId, "support");
+              }
+            }
           } else {
             updateCuringStation(s.id, { remainingTime: s.remainingTime - 1 });
           }
@@ -67,7 +75,7 @@ export default function CleaningCuring() {
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [store, updateCleaningStation, updateCuringStation]);
+  }, [store, updateCleaningStation, updateCuringStation, advanceSimple]);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Package, Truck, CheckCircle2, Clock } from "lucide-react";
+import { Search, Package, Truck, CheckCircle2, Clock, Star, X } from "lucide-react";
 import { useFactoryStore } from "../store/useFactoryStore";
 import { cn } from "../lib/utils";
 import type { OrderStatus, Order } from "../types";
@@ -10,6 +10,7 @@ const STEPS: { key: OrderStatus; label: string }[] = [
   { key: "layout", label: "排版中" },
   { key: "printing", label: "打印中" },
   { key: "cleaning", label: "清洗中" },
+  { key: "curing", label: "固化中" },
   { key: "support", label: "去支撑" },
   { key: "qc", label: "质检中" },
   { key: "shipping", label: "发货中" },
@@ -26,15 +27,88 @@ const MOCK_ETA: Record<OrderStatus, string> = {
   layout: "预计 30 分钟完成排版",
   printing: "预计 4 小时完成打印",
   cleaning: "预计 30 分钟完成清洗",
+  curing: "预计 40 分钟完成固化",
   support: "预计 1 小时完成去支撑",
   qc: "预计 45 分钟完成质检",
   shipping: "预计 1-3 天送达",
   completed: "已送达",
 };
 
+function ReviewModal({
+  order,
+  onClose,
+}: {
+  order: Order;
+  onClose: () => void;
+}) {
+  const addReview = useFactoryStore((s) => s.addReview);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+      <div className="bg-dark-800 border border-dark-600 rounded-sm p-6 w-full max-w-md space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display font-semibold text-dark-50">评价订单</h3>
+          <button onClick={onClose} className="text-dark-400 hover:text-dark-200">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <p className="text-sm font-mono text-dark-400">
+          订单号: {order.orderNo}
+        </p>
+        <div>
+          <label className="label-industrial">满意度评分</label>
+          <div className="flex gap-1 mt-1">
+            {[1, 2, 3, 4, 5].map((s) => (
+              <button key={s} onClick={() => setRating(s)}>
+                <Star
+                  className={cn(
+                    "w-8 h-8 transition-all",
+                    s <= rating
+                      ? "text-amber-400 fill-amber-400"
+                      : "text-dark-600 hover:text-dark-500"
+                  )}
+                />
+              </button>
+            ))}
+          </div>
+          <p className="text-xs font-mono text-dark-500 mt-1">
+            {rating === 5 ? "非常满意" : rating === 4 ? "满意" : rating === 3 ? "一般" : rating === 2 ? "不满意" : "非常不满意"}
+          </p>
+        </div>
+        <div>
+          <label className="label-industrial">评价内容</label>
+          <textarea
+            className="input-industrial min-h-[80px] resize-none py-2.5 mt-1"
+            placeholder="请输入您的评价..."
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+          />
+        </div>
+        <div className="flex gap-3">
+          <button onClick={onClose} className="btn-secondary flex-1">
+            取消
+          </button>
+          <button
+            onClick={() => {
+              addReview(order.id, rating, comment || "客户评价");
+              onClose();
+            }}
+            className="btn-primary flex-1"
+          >
+            提交评价
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CustomerPortal() {
   const orders = useFactoryStore((s) => s.orders);
   const [keyword, setKeyword] = useState("");
+  const [reviewingOrderId, setReviewingOrderId] = useState<string | null>(null);
 
   const filtered = orders.filter((o) => {
     if (!keyword.trim()) return true;
@@ -44,6 +118,10 @@ export default function CustomerPortal() {
       o.customerName.toLowerCase().includes(kw)
     );
   });
+
+  const reviewingOrder = reviewingOrderId
+    ? orders.find((o) => o.id === reviewingOrderId)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -82,15 +160,32 @@ export default function CustomerPortal() {
       ) : (
         <div className="space-y-4">
           {filtered.map((order) => (
-            <OrderCard key={order.id} order={order} />
+            <OrderCard
+              key={order.id}
+              order={order}
+              onReview={() => setReviewingOrderId(order.id)}
+            />
           ))}
         </div>
+      )}
+
+      {reviewingOrder && (
+        <ReviewModal
+          order={reviewingOrder}
+          onClose={() => setReviewingOrderId(null)}
+        />
       )}
     </div>
   );
 }
 
-function OrderCard({ order }: { order: Order }) {
+function OrderCard({
+  order,
+  onReview,
+}: {
+  order: Order;
+  onReview: () => void;
+}) {
   const currentIdx = STEP_INDEX[order.status];
 
   return (
@@ -235,6 +330,47 @@ function OrderCard({ order }: { order: Order }) {
             )}
           </div>
         )}
+
+      {order.status === "completed" && !order.review && (
+        <button
+          onClick={onReview}
+          className="btn-primary w-full flex items-center justify-center gap-2"
+        >
+          <Star className="w-4 h-4" />
+          评价订单
+        </button>
+      )}
+
+      {order.review && (
+        <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-sm space-y-2">
+          <div className="flex items-center gap-2">
+            <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
+            <span className="text-sm font-display font-medium text-dark-100">
+              我的评价
+            </span>
+            <span className="text-sm font-mono text-amber-400 ml-auto">
+              {order.review.rating}.0 分
+            </span>
+          </div>
+          <div className="flex gap-0.5">
+            {[1, 2, 3, 4, 5].map((s) => (
+              <Star
+                key={s}
+                className={cn(
+                  "w-4 h-4",
+                  s <= order.review!.rating
+                    ? "text-amber-400 fill-amber-400"
+                    : "text-dark-600"
+                )}
+              />
+            ))}
+          </div>
+          <p className="text-sm text-dark-300">{order.review.comment}</p>
+          <p className="text-xs font-mono text-dark-500">
+            {order.review.reviewedAt}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

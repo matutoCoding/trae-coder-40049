@@ -15,6 +15,7 @@ import {
   Package,
   Eye,
   ChevronDown,
+  AlertOctagon,
 } from "lucide-react";
 import { useFactoryStore } from "../store/useFactoryStore";
 import { OrderStatusBadge } from "../components/StatusBadges";
@@ -47,12 +48,17 @@ const commonDefects = [
 
 export default function SupportRemoval() {
   const orders = useFactoryStore((s) => s.orders).filter((o) =>
-    ["support", "qc", "cleaning"].includes(o.status)
+    ["support", "qc", "cleaning", "curing"].includes(o.status)
   );
+  const reworkOrder = useFactoryStore((s) => s.reworkOrder);
+  const advanceSimple = useFactoryStore((s) => s.advanceSimple);
+  const updateOrderStatus = useFactoryStore((s) => s.updateOrderStatus);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(
     orders.find((o) => o.status === "support")?.id || null
   );
   const [activeTab, setActiveTab] = useState<"removal" | "qc">("removal");
+  const [reworkReason, setReworkReason] = useState("");
+  const [showReworkModal, setShowReworkModal] = useState(false);
   const [qcForm, setQcForm] = useState<QCForm>({
     surfaceScore: 4,
     dimensionalAccuracy: 4,
@@ -598,7 +604,18 @@ export default function SupportRemoval() {
                         {qcForm.passed !== null && (
                           <div className="mt-5 flex justify-center gap-3">
                             <button className="btn-secondary">保存报告</button>
-                            <button className="btn-primary">
+                            <button
+                              onClick={() => {
+                                if (!selectedOrder) return;
+                                if (qcForm.passed) {
+                                  advanceSimple(selectedOrder.id, "shipping");
+                                  updateOrderStatus(selectedOrder.id, "shipping", "系统", "质检合格，转入成品交付");
+                                } else {
+                                  setShowReworkModal(true);
+                                }
+                              }}
+                              className="btn-primary"
+                            >
                               {qcForm.passed ? "转入成品交付" : "退回重新打印"}
                             </button>
                           </div>
@@ -618,6 +635,54 @@ export default function SupportRemoval() {
           )}
         </div>
       </div>
+
+      {showReworkModal && selectedOrder && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-dark-800 border border-dark-600 rounded-sm p-6 w-full max-w-md space-y-4">
+            <div className="flex items-center gap-2">
+              <AlertOctagon className="w-5 h-5 text-red-400" />
+              <h3 className="font-display font-semibold text-dark-50">退回返修</h3>
+            </div>
+            {(selectedOrder.reworkCount || 0) >= 2 && (
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-sm flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                <p className="text-xs font-mono text-red-400">
+                  该订单已返修 {selectedOrder.reworkCount || 0} 次，属于高风险订单！
+                </p>
+              </div>
+            )}
+            <div>
+              <label className="label-industrial">返修原因</label>
+              <textarea
+                className="input-industrial min-h-[80px] resize-none py-2.5"
+                placeholder="请描述返修原因..."
+                value={reworkReason}
+                onChange={(e) => setReworkReason(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowReworkModal(false); setReworkReason(""); }}
+                className="btn-secondary flex-1"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  if (!selectedOrder) return;
+                  reworkOrder(selectedOrder.id, reworkReason || "质检不合格");
+                  setShowReworkModal(false);
+                  setReworkReason("");
+                  setQcForm({ ...qcForm, passed: null });
+                }}
+                className="btn-primary flex-1"
+              >
+                确认退回
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

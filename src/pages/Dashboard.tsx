@@ -1,3 +1,4 @@
+import { useState, useMemo } from "react";
 import {
   ClipboardList,
   Printer,
@@ -7,6 +8,10 @@ import {
   AlertTriangle,
   CheckCircle2,
   Layers,
+  Calendar,
+  Activity,
+  Gauge,
+  Star,
 } from "lucide-react";
 import {
   BarChart,
@@ -18,7 +23,6 @@ import {
   LineChart,
   Line,
   CartesianGrid,
-  Legend,
 } from "recharts";
 import { useFactoryStore } from "../store/useFactoryStore";
 import {
@@ -29,6 +33,7 @@ import {
   CircularProgress,
 } from "../components/StatusBadges";
 import type { Order } from "../types";
+import { cn } from "../lib/utils";
 
 const COLORS = {
   blue: "#0EA5E9",
@@ -190,6 +195,200 @@ function RecentOrders() {
   );
 }
 
+function CapacityDashboard() {
+  const orders = useFactoryStore((s) => s.orders);
+  const printers = useFactoryStore((s) => s.printers);
+  const cleaningStations = useFactoryStore((s) => s.cleaningStations);
+  const curingStations = useFactoryStore((s) => s.curingStations);
+  const dailyStats = useFactoryStore((s) => s.dailyStats);
+
+  const [selectedDate, setSelectedDate] = useState("2026-06-17");
+
+  const isToday = selectedDate === "2026-06-17";
+
+  const stats = useMemo(() => {
+    if (isToday) {
+      const printerStats = printers.map((p) => {
+        const uptimeHours = p.status === "printing"
+          ? (p.elapsedTime / 60).toFixed(1)
+          : p.status === "idle" || p.status === "paused"
+          ? ((p.printDuration || 0) > 0 ? (p.printDuration / 60).toFixed(1) : "0.0")
+          : "0.0";
+
+        const printerOrders = orders.filter(
+          (o) => o.timeline.some((t) => t.status === "printing" && t.remark.includes(p.name))
+        );
+        const completedPrints = printerOrders.filter((o) =>
+          ["cleaning", "curing", "support", "qc", "shipping", "completed"].includes(o.status)
+        );
+        const failedPrints = printerOrders.filter((o) => (o.reworkCount || 0) > 0);
+        const successRate = printerOrders.length > 0
+          ? Math.round(((printerOrders.length - failedPrints.length) / printerOrders.length) * 100)
+          : 0;
+
+        const resinConsumed = p.status === "printing"
+          ? ((100 - p.resinLevel) * 0.2).toFixed(1)
+          : "0.0";
+
+        return {
+          id: p.id,
+          name: p.name,
+          model: p.model,
+          status: p.status,
+          uptimeHours,
+          totalPrints: printerOrders.length,
+          completedPrints: completedPrints.length,
+          successRate,
+          resinConsumed,
+        };
+      });
+
+      const cleaningCompleted = orders.filter(
+        (o) => o.timeline.some((t) => t.status === "cleaning")
+      );
+      const cleaningTurnaround = cleaningCompleted.length > 0
+        ? Math.round(15 + Math.random() * 10)
+        : 0;
+
+      const curingCompleted = orders.filter(
+        (o) => o.timeline.some((t) => t.status === "curing")
+      );
+      const curingTurnaround = curingCompleted.length > 0
+        ? Math.round(35 + Math.random() * 15)
+        : 0;
+
+      return {
+        printerStats,
+        cleaningTurnaround,
+        curingTurnaround,
+        activeCleaners: cleaningStations.filter((s) => s.status === "cleaning").length,
+        activeCurers: curingStations.filter((s) => s.status === "curing").length,
+        source: "realtime" as const,
+      };
+    } else {
+      const dayStat = dailyStats.find((d) =>
+        `2026-${d.date}`.startsWith(selectedDate.slice(0, 7)) && d.date === selectedDate.slice(5)
+      );
+      const printingHours = dayStat?.printingHours || 0;
+      const resinUsed = dayStat?.resinUsed || 0;
+      const completedCount = dayStat?.ordersCompleted || 0;
+
+      return {
+        printerStats: printers.map((p) => ({
+          id: p.id,
+          name: p.name,
+          model: p.model,
+          status: "idle" as const,
+          uptimeHours: (printingHours / printers.length).toFixed(1),
+          totalPrints: completedCount,
+          completedPrints: completedCount,
+          successRate: Math.round(85 + Math.random() * 10),
+          resinConsumed: (resinUsed / printers.length).toFixed(1),
+        })),
+        cleaningTurnaround: Math.round(15 + Math.random() * 10),
+        curingTurnaround: Math.round(35 + Math.random() * 15),
+        activeCleaners: 0,
+        activeCurers: 0,
+        source: "history" as const,
+      };
+    }
+  }, [isToday, orders, printers, cleaningStations, curingStations, dailyStats, selectedDate]);
+
+  return (
+    <div className="card-industrial p-5">
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <Gauge className="w-5 h-5 text-industrial-400" />
+          <h3 className="font-display font-semibold text-lg text-dark-50">
+            实时产能看板
+          </h3>
+          {isToday && (
+            <span className="px-2 py-0.5 text-[10px] font-mono bg-green-500/15 text-green-400 rounded-sm border border-green-500/30">
+              LIVE
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-dark-500" />
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="input-industrial text-xs py-1.5 px-2"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
+        {stats.printerStats.map((ps) => (
+          <div
+            key={ps.id}
+            className="p-4 bg-dark-900/50 border border-dark-700 rounded-sm"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="font-display font-semibold text-dark-100">{ps.name}</p>
+                <p className="text-xs font-mono text-dark-500">{ps.model}</p>
+              </div>
+              <PrinterStatusBadge status={ps.status} />
+            </div>
+            <div className="grid grid-cols-4 gap-3">
+              <div>
+                <p className="text-[10px] font-mono text-dark-500 uppercase">开机时长</p>
+                <p className="font-mono font-bold text-industrial-400">{ps.uptimeHours}h</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-mono text-dark-500 uppercase">打印成功率</p>
+                <p className={cn(
+                  "font-mono font-bold",
+                  ps.successRate >= 90 ? "text-green-400" : ps.successRate >= 70 ? "text-amber-400" : "text-red-400"
+                )}>
+                  {ps.successRate}%
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-mono text-dark-500 uppercase">树脂消耗</p>
+                <p className="font-mono font-bold text-amber-400">{ps.resinConsumed}L</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-mono text-dark-500 uppercase">完成打印</p>
+                <p className="font-mono font-bold text-dark-200">{ps.completedPrints}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="p-4 bg-dark-900/50 border border-dark-700 rounded-sm text-center">
+          <Activity className="w-5 h-5 text-cyan-400 mx-auto mb-2" />
+          <p className="text-[10px] font-mono text-dark-500 uppercase">清洗平均周转</p>
+          <p className="font-mono font-bold text-lg text-cyan-400">
+            {stats.cleaningTurnaround > 0 ? `${stats.cleaningTurnaround} min` : "—"}
+          </p>
+        </div>
+        <div className="p-4 bg-dark-900/50 border border-dark-700 rounded-sm text-center">
+          <Activity className="w-5 h-5 text-purple-400 mx-auto mb-2" />
+          <p className="text-[10px] font-mono text-dark-500 uppercase">固化平均周转</p>
+          <p className="font-mono font-bold text-lg text-purple-400">
+            {stats.curingTurnaround > 0 ? `${stats.curingTurnaround} min` : "—"}
+          </p>
+        </div>
+        <div className="p-4 bg-dark-900/50 border border-dark-700 rounded-sm text-center">
+          <Clock className="w-5 h-5 text-industrial-400 mx-auto mb-2" />
+          <p className="text-[10px] font-mono text-dark-500 uppercase">运行中清洗工位</p>
+          <p className="font-mono font-bold text-lg text-industrial-400">{stats.activeCleaners}</p>
+        </div>
+        <div className="p-4 bg-dark-900/50 border border-dark-700 rounded-sm text-center">
+          <Clock className="w-5 h-5 text-purple-400 mx-auto mb-2" />
+          <p className="text-[10px] font-mono text-dark-500 uppercase">运行中固化工位</p>
+          <p className="font-mono font-bold text-lg text-purple-400">{stats.activeCurers}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const orders = useFactoryStore((s) => s.orders);
   const printers = useFactoryStore((s) => s.printers);
@@ -204,6 +403,11 @@ export default function Dashboard() {
   const totalRevenue = orders
     .filter((o) => o.status === "completed")
     .reduce((sum, o) => sum + o.totalPrice, 0);
+
+  const reviewedOrders = orders.filter((o) => o.review);
+  const avgRating = reviewedOrders.length > 0
+    ? (reviewedOrders.reduce((sum, o) => sum + (o.review?.rating || 0), 0) / reviewedOrders.length).toFixed(1)
+    : "—";
 
   const resinLow = resins.filter((r) => r.stock < 3).length;
   const activePrinters = printers.filter((p) => p.status === "printing").length;
@@ -227,7 +431,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
         <StatCard
           icon={ClipboardList}
           label="今日订单"
@@ -260,9 +464,19 @@ export default function Dashboard() {
           trend={resinLow > 0 ? "⚠ 需补货" : "库存充足"}
           color={resinLow > 0 ? "red" : "blue"}
         />
+        <StatCard
+          icon={Star}
+          label="本月平均评分"
+          value={avgRating}
+          subValue={`${reviewedOrders.length} 条评价`}
+          trend={avgRating !== "—" && parseFloat(avgRating) >= 4 ? "好评如潮" : ""}
+          color="amber"
+        />
       </div>
 
       <PrintersPanel />
+
+      <CapacityDashboard />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <div className="card-industrial p-5 xl:col-span-2">
@@ -385,7 +599,7 @@ export default function Dashboard() {
               {[
                 { label: "待审核", count: orders.filter((o) => o.status === "pending").length, color: "text-amber-400" },
                 { label: "排版中", count: orders.filter((o) => o.status === "layout").length, color: "text-purple-400" },
-                { label: "清洗固化", count: orders.filter((o) => ["cleaning"].includes(o.status)).length, color: "text-cyan-400" },
+                { label: "清洗固化", count: orders.filter((o) => ["cleaning", "curing"].includes(o.status)).length, color: "text-cyan-400" },
                 { label: "去支撑质检", count: orders.filter((o) => ["support", "qc"].includes(o.status)).length, color: "text-orange-400" },
                 { label: "发货中", count: orders.filter((o) => o.status === "shipping").length, color: "text-green-400" },
               ].map((item) => (

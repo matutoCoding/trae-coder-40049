@@ -41,6 +41,7 @@ interface FactoryState {
   advanceSimple: (orderId: string, nextStatus: OrderStatus) => void;
   reworkOrder: (orderId: string, reason: string) => void;
   addReview: (orderId: string, rating: number, comment: string) => void;
+  advanceFromCuringToSupport: (orderId: string) => void;
   refillResin: (printerId: string, amountLiters: number) => void;
   changeResin: (printerId: string, resinId: string) => void;
   updateResinStock: (resinId: string, delta: number) => void;
@@ -466,6 +467,40 @@ export const useFactoryStore = create<FactoryState>((set, get) => ({
               },
             }
           : o
+      ),
+    }));
+  },
+
+  advanceFromCuringToSupport: (orderId) => {
+    const state = get();
+    const order = state.orders.find((o) => o.id === orderId);
+    if (!order || order.status !== "curing") return;
+    const curingId = order.assignedCuringId;
+
+    set((state) => ({
+      orders: state.orders.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: "support" as OrderStatus,
+              updatedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
+              timeline: [
+                ...o.timeline,
+                {
+                  status: "support",
+                  statusLabel: "去支撑",
+                  timestamp: new Date().toISOString().replace("T", " ").slice(0, 19),
+                  operator: "系统",
+                  remark: "UV固化完成，转入去支撑工序",
+                },
+              ],
+            }
+          : o
+      ),
+      curingStations: state.curingStations.map((s) =>
+        s.id === curingId
+          ? { ...s, status: "idle" as const, orderId: undefined, orderNo: undefined, remainingTime: 0 }
+          : s
       ),
     }));
   },

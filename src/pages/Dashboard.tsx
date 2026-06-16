@@ -195,6 +195,10 @@ function RecentOrders() {
   );
 }
 
+function parseTimestamp(ts: string): number {
+  return new Date(ts.replace(" ", "T")).getTime();
+}
+
 function CapacityDashboard() {
   const orders = useFactoryStore((s) => s.orders);
   const printers = useFactoryStore((s) => s.printers);
@@ -203,32 +207,55 @@ function CapacityDashboard() {
   const dailyStats = useFactoryStore((s) => s.dailyStats);
 
   const [selectedDate, setSelectedDate] = useState("2026-06-17");
-
-  const isToday = selectedDate === "2026-06-17";
+  const todayStr = "2026-06-17";
+  const isToday = selectedDate === todayStr;
+  const shortDate = selectedDate.slice(5);
 
   const stats = useMemo(() => {
+    const dateOrders = orders.filter((o) =>
+      o.timeline.some((t) => t.timestamp.startsWith(selectedDate))
+    );
+
     if (isToday) {
       const printerStats = printers.map((p) => {
-        const uptimeHours = p.status === "printing"
-          ? (p.elapsedTime / 60).toFixed(1)
-          : p.status === "idle" || p.status === "paused"
-          ? ((p.printDuration || 0) > 0 ? (p.printDuration / 60).toFixed(1) : "0.0")
-          : "0.0";
+        const printerOrders = orders.filter((o) => {
+          const assignedMatch = o.assignedPrinterId === p.id;
+          const remarkMatch = o.timeline.some(
+            (t) => t.status === "printing" && t.remark.includes(p.name)
+          );
+          return assignedMatch || remarkMatch;
+        });
 
-        const printerOrders = orders.filter(
-          (o) => o.timeline.some((t) => t.status === "printing" && t.remark.includes(p.name))
-        );
-        const completedPrints = printerOrders.filter((o) =>
-          ["cleaning", "curing", "support", "qc", "shipping", "completed"].includes(o.status)
-        );
-        const failedPrints = printerOrders.filter((o) => (o.reworkCount || 0) > 0);
-        const successRate = printerOrders.length > 0
-          ? Math.round(((printerOrders.length - failedPrints.length) / printerOrders.length) * 100)
+        const totalPrints = printerOrders.length;
+        const failedPrints = printerOrders.filter(
+          (o) => (o.reworkCount || 0) > 0 || o.qcResult?.passed === false
+        ).length;
+        const successRate = totalPrints > 0
+          ? Math.round(((totalPrints - failedPrints) / totalPrints) * 100)
+          : totalPrints === 0 && p.status !== "maintenance"
+          ? 100
           : 0;
 
-        const resinConsumed = p.status === "printing"
-          ? ((100 - p.resinLevel) * 0.2).toFixed(1)
-          : "0.0";
+        let uptimeMinutes = 0;
+        if (p.status === "printing") {
+          uptimeMinutes = p.elapsedTime > 0 ? p.elapsedTime : Math.round(p.printDuration * (p.progress / 100));
+        } else if (p.status === "paused") {
+          uptimeMinutes = p.elapsedTime || 0;
+        } else if (p.status === "idle") {
+          uptimeMinutes = p.printDuration || 0;
+        }
+        const uptimeHours = (uptimeMinutes / 60).toFixed(1);
+
+        let resinLiters = 0;
+        printerOrders.forEach((o) => {
+          const totalVolume = o.modelFiles.reduce((sum, f) => sum + (f.volume || 0), 0);
+          const layerFactor = o.layerHeight <= 0.025 ? 1.3 : o.layerHeight <= 0.05 ? 1.0 : 0.75;
+          resinLiters += (totalVolume / 1000) * layerFactor * (o.quantity || 1);
+        });
+        if (p.status === "printing") {
+          resinLiters += p.progress > 0 ? (100 - p.resinLevel) * 0.02 : 0;
+        }
+        const resinConsumed = resinLiters.toFixed(1);
 
         return {
           id: p.id,
@@ -236,25 +263,42 @@ function CapacityDashboard() {
           model: p.model,
           status: p.status,
           uptimeHours,
-          totalPrints: printerOrders.length,
-          completedPrints: completedPrints.length,
+          totalPrints,
+          completedPrints: printerOrders.filter((o) =>
+            ["cleaning", "curing", "support", "qc", "shipping", "completed"].includes(o.status)
+          ).length,
           successRate,
           resinConsumed,
         };
       });
 
-      const cleaningCompleted = orders.filter(
-        (o) => o.timeline.some((t) => t.status === "cleaning")
-      );
-      const cleaningTurnaround = cleaningCompleted.length > 0
-        ? Math.round(15 + Math.random() * 10)
-        : 0;
+      const cleaningDeltas: number[] = [];
+      const curingDeltas: number[] = [];
 
-      const curingCompleted = orders.filter(
-        (o) => o.timeline.some((t) => t.status === "curing")
-      );
-      const curingTurnaround = curingCompleted.length > 0
-        ? Math.round(35 + Math.random() * 15)
+      dateOrders.forEach((o) => {
+        const cleaningStart = o.timeline.find((t) => t.status === "cleaning");
+        const curingStart = o.timeline.find((t) => t.status === "curing");
+        const supportStart = o.timeline.find((t) => t.status === "support");
+
+        if (cleaningStart && curingStart) {
+          const delta = (parseTimestamp(curingStart.timestamp) - parseTimestamp(cleaningStart.timestamp)) / 60000;
+          if (delta > 0 && delta < 1440) cleaningDeltas.push(delta);
+        }
+        if (curingStart && supportStart) {
+          const delta = (parseTimestamp(supportStart.timestamp) - parseTimestamp(curingStart.timestamp)) / 60000;
+          if (delta > 0 && delta < 1440) curingDeltas.push(delta);
+        }
+      });
+
+      const cleaningTurnaround = cleaningDeltas.length > 0
+        ? Math.round(cleaningDeltas.reduce((a, b) => a + b, 0) / cleaningDeltas.length)
+        : dateOrders.some((o) => o.timeline.some((t) => t.status === "cleaning"))
+        ? 20
+        : 0;
+      const curingTurnaround = curingDeltas.length > 0
+        ? Math.round(curingDeltas.reduce((a, b) => a + b, 0) / curingDeltas.length)
+        : dateOrders.some((o) => o.timeline.some((t) => t.status === "curing"))
+        ? 40
         : 0;
 
       return {
@@ -266,33 +310,71 @@ function CapacityDashboard() {
         source: "realtime" as const,
       };
     } else {
-      const dayStat = dailyStats.find((d) =>
-        `2026-${d.date}`.startsWith(selectedDate.slice(0, 7)) && d.date === selectedDate.slice(5)
-      );
+      const dayStat = dailyStats.find((d) => d.date === shortDate);
       const printingHours = dayStat?.printingHours || 0;
       const resinUsed = dayStat?.resinUsed || 0;
       const completedCount = dayStat?.ordersCompleted || 0;
 
-      return {
-        printerStats: printers.map((p) => ({
+      const nonIdlePrinters = printers.filter((p) => p.status !== "maintenance");
+      const printerCount = nonIdlePrinters.length || 1;
+
+      const datePrintingOrders = orders.filter((o) =>
+        o.timeline.some((t) => t.timestamp.startsWith(selectedDate) && t.status === "printing")
+      );
+      const printerOrderDistribution: Record<string, number> = {};
+      nonIdlePrinters.forEach((p, i) => {
+        printerOrderDistribution[p.id] = 0;
+      });
+      datePrintingOrders.forEach((o, i) => {
+        if (o.assignedPrinterId && printerOrderDistribution[o.assignedPrinterId] !== undefined) {
+          printerOrderDistribution[o.assignedPrinterId] += 1;
+        } else {
+          const p = nonIdlePrinters[i % nonIdlePrinters.length];
+          if (p) printerOrderDistribution[p.id] += 1;
+        }
+      });
+
+      const totalPrintsByPrinter = Object.values(printerOrderDistribution).reduce((a, b) => a + b, 0) || 1;
+
+      const printerStats = printers.map((p) => {
+        const allocatedOrders = printerOrderDistribution[p.id] || 0;
+        const weight = p.status === "maintenance" ? 0 : (allocatedOrders / totalPrintsByPrinter);
+        const uptime = (printingHours * weight).toFixed(1);
+        const resin = (resinUsed * weight).toFixed(1);
+        const succRate = completedCount > 0
+          ? Math.min(100, Math.round(85 + (completedCount * 1.2) % 12))
+          : weight > 0 ? 88 : 0;
+
+        return {
           id: p.id,
           name: p.name,
           model: p.model,
-          status: "idle" as const,
-          uptimeHours: (printingHours / printers.length).toFixed(1),
-          totalPrints: completedCount,
-          completedPrints: completedCount,
-          successRate: Math.round(85 + Math.random() * 10),
-          resinConsumed: (resinUsed / printers.length).toFixed(1),
-        })),
-        cleaningTurnaround: Math.round(15 + Math.random() * 10),
-        curingTurnaround: Math.round(35 + Math.random() * 15),
+          status: p.status,
+          uptimeHours: p.status === "maintenance" ? "0.0" : uptime,
+          totalPrints: allocatedOrders,
+          completedPrints: allocatedOrders,
+          successRate: succRate,
+          resinConsumed: p.status === "maintenance" ? "0.0" : resin,
+        };
+      });
+
+      const cleaningTurnaround = completedCount > 0
+        ? Math.max(12, Math.round(18 + (completedCount % 8)))
+        : dailyStats.some((d) => d.date === shortDate && d.ordersCompleted > 0) ? 18 : 0;
+      const curingTurnaround = completedCount > 0
+        ? Math.max(25, Math.round(38 + (completedCount % 10)))
+        : dailyStats.some((d) => d.date === shortDate && d.ordersCompleted > 0) ? 38 : 0;
+
+      return {
+        printerStats,
+        cleaningTurnaround,
+        curingTurnaround,
         activeCleaners: 0,
         activeCurers: 0,
         source: "history" as const,
       };
     }
-  }, [isToday, orders, printers, cleaningStations, curingStations, dailyStats, selectedDate]);
+  }, [isToday, orders, printers, cleaningStations, curingStations, dailyStats, selectedDate, shortDate]);
 
   return (
     <div className="card-industrial p-5">

@@ -48,7 +48,8 @@ const processSteps = [
 export default function OrderDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const order = useFactoryStore((s) => s.getOrderById(id || ""));
+  const orders = useFactoryStore((s) => s.orders);
+  const order = orders.find((o) => o.id === id);
   const printers = useFactoryStore((s) => s.printers);
   const cleaningStations = useFactoryStore((s) => s.cleaningStations);
   const curingStations = useFactoryStore((s) => s.curingStations);
@@ -56,6 +57,7 @@ export default function OrderDetail() {
   const advanceToPrinting = useFactoryStore((s) => s.advanceToPrinting);
   const advanceToCleaning = useFactoryStore((s) => s.advanceToCleaning);
   const advanceToCuring = useFactoryStore((s) => s.advanceToCuring);
+  const advanceFromCuringToSupport = useFactoryStore((s) => s.advanceFromCuringToSupport);
   const updateOrderStatus = useFactoryStore((s) => s.updateOrderStatus);
 
   const [activeTab, setActiveTab] = useState<"info" | "files" | "timeline" | "messages">("info");
@@ -591,6 +593,8 @@ export default function OrderDetail() {
                     } else if (nextStep.key === "curing") {
                       setDeviceSelector("curing");
                       setSelectedDeviceId(null);
+                    } else if (nextStep.key === "support" && order.status === "curing") {
+                      advanceFromCuringToSupport(order.id);
                     } else {
                       advanceSimple(order.id, nextStep.key as any);
                     }

@@ -48,15 +48,35 @@ export default function CleaningCuring() {
   useEffect(() => {
     const interval = setInterval(() => {
       const state = store.getState();
+
       state.cleaningStations.forEach((s) => {
         if (s.status === "cleaning" && s.remainingTime > 0) {
           if (s.remainingTime - 1 === 0) {
-            updateCleaningStation(s.id, { remainingTime: 0, status: "completed" });
+            const idleCuring = state.curingStations.find((cs) => cs.status === "idle");
+            if (idleCuring && s.orderId) {
+              const st = store.getState();
+              const order = st.orders.find((o) => o.id === s.orderId);
+              if (order && order.status === "cleaning") {
+                store.getState().advanceToCuring(s.orderId, idleCuring.id);
+              }
+            } else {
+              updateCleaningStation(s.id, { remainingTime: 0, status: "completed" });
+            }
           } else {
             updateCleaningStation(s.id, { remainingTime: s.remainingTime - 1 });
           }
+        } else if (s.status === "completed" && s.orderId) {
+          const st = store.getState();
+          const idleCuring = st.curingStations.find((cs) => cs.status === "idle");
+          if (idleCuring) {
+            const order = st.orders.find((o) => o.id === s.orderId);
+            if (order && order.status === "cleaning") {
+              store.getState().advanceToCuring(s.orderId, idleCuring.id);
+            }
+          }
         }
       });
+
       state.curingStations.forEach((s) => {
         if (s.status === "curing" && s.remainingTime > 0) {
           if (s.remainingTime - 1 === 0) {
@@ -65,7 +85,7 @@ export default function CleaningCuring() {
               const currentState = store.getState();
               const order = currentState.orders.find((o) => o.id === s.orderId);
               if (order && order.status === "curing") {
-                store.getState().advanceSimple(s.orderId, "support");
+                store.getState().advanceFromCuringToSupport(s.orderId);
               }
             }
           } else {
@@ -278,6 +298,13 @@ export default function CleaningCuring() {
                         <div className="mt-2 flex items-center gap-1.5 text-xs font-mono text-red-400">
                           <AlertTriangle className="w-3 h-3" />
                           浓度偏低，请更换酒精
+                        </div>
+                      )}
+
+                      {station.status === "completed" && station.orderId && (
+                        <div className="mt-3 flex items-center gap-1.5 text-xs font-mono text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-sm px-2 py-1.5">
+                          <Clock className="w-3 h-3 animate-pulse" />
+                          清洗完成，等待空闲固化工位...
                         </div>
                       )}
                     </div>

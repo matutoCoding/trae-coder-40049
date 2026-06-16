@@ -13,17 +13,129 @@ import {
   Activity,
   RefreshCw,
   ArrowDownToLine,
+  X,
 } from "lucide-react";
 import { useFactoryStore } from "../store/useFactoryStore";
 import { ProgressBar } from "../components/StatusBadges";
 import { cn } from "../lib/utils";
 
+function Modal({
+  isOpen,
+  onClose,
+  title,
+  children,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative bg-dark-800 border border-dark-600 rounded-sm shadow-2xl w-full max-w-md mx-4">
+        <div className="flex items-center justify-between p-4 border-b border-dark-700">
+          <h3 className="font-display font-semibold text-dark-100">{title}</h3>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-sm hover:bg-dark-700 text-dark-400 hover:text-dark-200"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+const REFILL_OPTIONS = [0.5, 1, 2, 3];
+
+type ModalType = "refill" | "change" | "stockRefill" | "addResin" | null;
+
 export default function ResinPrep() {
   const resins = useFactoryStore((s) => s.resins);
   const printers = useFactoryStore((s) => s.printers);
+  const refillResin = useFactoryStore((s) => s.refillResin);
+  const changeResin = useFactoryStore((s) => s.changeResin);
+  const updateResinStock = useFactoryStore((s) => s.updateResinStock);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTab, setSelectedTab] = useState<"inventory" | "tanks">("inventory");
+
+  const [modalType, setModalType] = useState<ModalType>(null);
+  const [modalPrinterId, setModalPrinterId] = useState<string | null>(null);
+  const [modalResinId, setModalResinId] = useState<string | null>(null);
+  const [refillAmount, setRefillAmount] = useState<number>(1);
+  const [stockRefillResinId, setStockRefillResinId] = useState<string | null>(null);
+  const [stockRefillAmount, setStockRefillAmount] = useState<number>(1);
+  const [addResinId, setAddResinId] = useState<string | null>(null);
+
+  const closeModal = () => {
+    setModalType(null);
+    setModalPrinterId(null);
+    setModalResinId(null);
+    setRefillAmount(1);
+    setStockRefillResinId(null);
+    setStockRefillAmount(1);
+    setAddResinId(null);
+  };
+
+  const openRefillModal = (printerId: string) => {
+    setModalPrinterId(printerId);
+    setRefillAmount(1);
+    setModalType("refill");
+  };
+
+  const openChangeModal = (printerId: string) => {
+    setModalPrinterId(printerId);
+    setModalResinId(null);
+    setModalType("change");
+  };
+
+  const openStockRefillModal = (resinId: string) => {
+    setStockRefillResinId(resinId);
+    setStockRefillAmount(1);
+    setModalType("stockRefill");
+  };
+
+  const openAddResinModal = (resinId: string) => {
+    setAddResinId(resinId);
+    setStockRefillAmount(1);
+    setModalType("addResin");
+  };
+
+  const handleRefillConfirm = () => {
+    if (!modalPrinterId) return;
+    refillResin(modalPrinterId, refillAmount);
+    const printer = printers.find((p) => p.id === modalPrinterId);
+    if (printer) {
+      const matchedResin = resins.find((r) => r.type === printer.resinType);
+      if (matchedResin) {
+        updateResinStock(matchedResin.id, -refillAmount);
+      }
+    }
+    closeModal();
+  };
+
+  const handleChangeConfirm = () => {
+    if (!modalPrinterId || !modalResinId) return;
+    changeResin(modalPrinterId, modalResinId);
+    closeModal();
+  };
+
+  const handleStockRefillConfirm = () => {
+    if (!stockRefillResinId) return;
+    updateResinStock(stockRefillResinId, stockRefillAmount);
+    closeModal();
+  };
+
+  const handleAddResinConfirm = () => {
+    if (!addResinId) return;
+    updateResinStock(addResinId, stockRefillAmount);
+    closeModal();
+  };
 
   const filteredResins = resins.filter(
     (r) =>
@@ -264,10 +376,16 @@ export default function ResinPrep() {
                         </td>
                         <td>
                           <div className="flex gap-1">
-                            <button className="p-1.5 rounded-sm hover:bg-dark-700 text-dark-400 hover:text-industrial-400">
+                            <button
+                              onClick={() => openStockRefillModal(resin.id)}
+                              className="p-1.5 rounded-sm hover:bg-dark-700 text-dark-400 hover:text-industrial-400"
+                            >
                               <ArrowDownToLine className="w-4 h-4" />
                             </button>
-                            <button className="p-1.5 rounded-sm hover:bg-dark-700 text-dark-400 hover:text-amber-400">
+                            <button
+                              onClick={() => openAddResinModal(resin.id)}
+                              className="p-1.5 rounded-sm hover:bg-dark-700 text-dark-400 hover:text-amber-400"
+                            >
                               <Plus className="w-4 h-4" />
                             </button>
                           </div>
@@ -411,11 +529,17 @@ export default function ResinPrep() {
                       )}
 
                       <div className="mt-3 flex gap-2">
-                        <button className="btn-secondary text-xs flex-1 py-1.5">
+                        <button
+                          onClick={() => openRefillModal(printer.id)}
+                          className="btn-secondary text-xs flex-1 py-1.5"
+                        >
                           <Plus className="w-3 h-3 inline mr-1" />
                           补充树脂
                         </button>
-                        <button className="btn-secondary text-xs flex-1 py-1.5">
+                        <button
+                          onClick={() => openChangeModal(printer.id)}
+                          className="btn-secondary text-xs flex-1 py-1.5"
+                        >
                           <TrendingDown className="w-3 h-3 inline mr-1" />
                           更换材料
                         </button>
@@ -429,7 +553,10 @@ export default function ResinPrep() {
                           ? "设备维护中，槽位已清空"
                           : "槽位空置，等待装料"}
                       </p>
-                      <button className="btn-primary text-xs mt-3">
+                      <button
+                        onClick={() => openChangeModal(printer.id)}
+                        className="btn-primary text-xs mt-3"
+                      >
                         <Plus className="w-3 h-3 inline mr-1" />
                         装入树脂
                       </button>
@@ -441,6 +568,227 @@ export default function ResinPrep() {
           </div>
         )}
       </div>
+
+      <Modal
+        isOpen={modalType === "refill"}
+        onClose={closeModal}
+        title="补充树脂"
+      >
+        <div className="space-y-4">
+          <div>
+            <p className="text-sm font-mono text-dark-400 mb-1">当前设备</p>
+            <p className="font-display text-dark-200">
+              {printers.find((p) => p.id === modalPrinterId)?.name}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm font-mono text-dark-400 mb-2">选择补充量</p>
+            <div className="grid grid-cols-4 gap-2">
+              {REFILL_OPTIONS.map((opt) => (
+                <button
+                  key={opt}
+                  onClick={() => setRefillAmount(opt)}
+                  className={cn(
+                    "py-2 rounded-sm text-sm font-mono border transition-all",
+                    refillAmount === opt
+                      ? "bg-industrial-500/20 border-industrial-500 text-industrial-400"
+                      : "bg-dark-800 border-dark-600 text-dark-300 hover:border-dark-500"
+                  )}
+                >
+                  {opt}L
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button onClick={closeModal} className="btn-secondary flex-1 text-sm">
+              取消
+            </button>
+            <button
+              onClick={handleRefillConfirm}
+              className="btn-primary flex-1 text-sm"
+            >
+              确认补充
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={modalType === "change"}
+        onClose={closeModal}
+        title="更换材料"
+      >
+        <div className="space-y-4">
+          <div>
+            <p className="text-sm font-mono text-dark-400 mb-1">当前设备</p>
+            <p className="font-display text-dark-200">
+              {printers.find((p) => p.id === modalPrinterId)?.name}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm font-mono text-dark-400 mb-2">选择树脂</p>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {resins.map((resin) => (
+                <button
+                  key={resin.id}
+                  onClick={() => setModalResinId(resin.id)}
+                  className={cn(
+                    "w-full flex items-center gap-3 p-3 rounded-sm border transition-all text-left",
+                    modalResinId === resin.id
+                      ? "bg-industrial-500/10 border-industrial-500"
+                      : "bg-dark-900/50 border-dark-700 hover:border-dark-500"
+                  )}
+                >
+                  <div
+                    className="w-8 h-8 rounded-sm border border-dark-600 flex-shrink-0"
+                    style={{ backgroundColor: resin.colorHex }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-display text-sm text-dark-100 truncate">
+                      {resin.name}
+                    </p>
+                    <p className="text-xs font-mono text-dark-400">
+                      {resin.type} · {resin.color}
+                    </p>
+                  </div>
+                  <span
+                    className={cn(
+                      "text-xs font-mono flex-shrink-0",
+                      resin.stock < 3 ? "text-red-400" : "text-dark-300"
+                    )}
+                  >
+                    库存: {resin.stock}{resin.unit}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button onClick={closeModal} className="btn-secondary flex-1 text-sm">
+              取消
+            </button>
+            <button
+              onClick={handleChangeConfirm}
+              disabled={!modalResinId}
+              className={cn(
+                "flex-1 text-sm",
+                modalResinId ? "btn-primary" : "btn-secondary opacity-50 cursor-not-allowed"
+              )}
+            >
+              确认更换
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={modalType === "stockRefill"}
+        onClose={closeModal}
+        title="补充库存"
+      >
+        <div className="space-y-4">
+          <div>
+            <p className="text-sm font-mono text-dark-400 mb-1">树脂</p>
+            <div className="flex items-center gap-2">
+              <div
+                className="w-6 h-6 rounded-sm border border-dark-600"
+                style={{
+                  backgroundColor:
+                    resins.find((r) => r.id === stockRefillResinId)?.colorHex,
+                }}
+              />
+              <p className="font-display text-dark-200">
+                {resins.find((r) => r.id === stockRefillResinId)?.name}
+              </p>
+            </div>
+            <p className="text-xs font-mono text-dark-400 mt-1">
+              当前库存: {resins.find((r) => r.id === stockRefillResinId)?.stock}
+              {resins.find((r) => r.id === stockRefillResinId)?.unit}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm font-mono text-dark-400 mb-2">补充数量</p>
+            <input
+              type="number"
+              min="0.1"
+              step="0.5"
+              value={stockRefillAmount}
+              onChange={(e) => setStockRefillAmount(Number(e.target.value))}
+              className="input-industrial w-full"
+            />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button onClick={closeModal} className="btn-secondary flex-1 text-sm">
+              取消
+            </button>
+            <button
+              onClick={handleStockRefillConfirm}
+              disabled={stockRefillAmount <= 0}
+              className={cn(
+                "flex-1 text-sm",
+                stockRefillAmount > 0
+                  ? "btn-primary"
+                  : "btn-secondary opacity-50 cursor-not-allowed"
+              )}
+            >
+              确认补充
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={modalType === "addResin"}
+        onClose={closeModal}
+        title="添加树脂入库"
+      >
+        <div className="space-y-4">
+          <div>
+            <p className="text-sm font-mono text-dark-400 mb-1">树脂</p>
+            <div className="flex items-center gap-2">
+              <div
+                className="w-6 h-6 rounded-sm border border-dark-600"
+                style={{
+                  backgroundColor:
+                    resins.find((r) => r.id === addResinId)?.colorHex,
+                }}
+              />
+              <p className="font-display text-dark-200">
+                {resins.find((r) => r.id === addResinId)?.name}
+              </p>
+            </div>
+          </div>
+          <div>
+            <p className="text-sm font-mono text-dark-400 mb-2">添加数量</p>
+            <input
+              type="number"
+              min="0.1"
+              step="0.5"
+              value={stockRefillAmount}
+              onChange={(e) => setStockRefillAmount(Number(e.target.value))}
+              className="input-industrial w-full"
+            />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button onClick={closeModal} className="btn-secondary flex-1 text-sm">
+              取消
+            </button>
+            <button
+              onClick={handleAddResinConfirm}
+              disabled={stockRefillAmount <= 0}
+              className={cn(
+                "flex-1 text-sm",
+                stockRefillAmount > 0
+                  ? "btn-primary"
+                  : "btn-secondary opacity-50 cursor-not-allowed"
+              )}
+            >
+              确认添加
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

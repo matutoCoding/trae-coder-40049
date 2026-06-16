@@ -35,6 +35,14 @@ interface FactoryState {
   updateCuringStation: (stationId: string, updates: Partial<CuringStation>) => void;
   setCurrentOrder: (orderId: string | null) => void;
   addOrder: (order: Order) => void;
+  advanceToPrinting: (orderId: string, printerId: string) => void;
+  advanceToCleaning: (orderId: string, cleaningStationId: string) => void;
+  advanceToCuring: (orderId: string, curingStationId: string) => void;
+  advanceSimple: (orderId: string, nextStatus: OrderStatus) => void;
+  refillResin: (printerId: string, amountLiters: number) => void;
+  changeResin: (printerId: string, resinId: string) => void;
+  updateResinStock: (resinId: string, delta: number) => void;
+  updatePrinter: (printerId: string, updates: Partial<Printer>) => void;
 }
 
 export const useFactoryStore = create<FactoryState>((set, get) => ({
@@ -125,6 +133,269 @@ export const useFactoryStore = create<FactoryState>((set, get) => ({
   addOrder: (order) => {
     set((state) => ({
       orders: [order, ...state.orders],
+    }));
+  },
+
+  advanceToPrinting: (orderId, printerId) => {
+    const state = get();
+    const order = state.orders.find((o) => o.id === orderId);
+    const printer = state.printers.find((p) => p.id === printerId);
+    if (!order || !printer) return;
+
+    const previousPrinterId = order.assignedPrinterId;
+    const resinInfo = state.resins.find((r) => r.type === order.materialType);
+
+    set((state) => ({
+      orders: state.orders.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: "printing" as OrderStatus,
+              assignedPrinterId: printerId,
+              updatedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
+              timeline: [
+                ...o.timeline,
+                {
+                  status: "printing",
+                  statusLabel: "打印中",
+                  timestamp: new Date().toISOString().replace("T", " ").slice(0, 19),
+                  operator: "系统",
+                  remark: `分配至 ${printer.name}，开始打印`,
+                },
+              ],
+            }
+          : o
+      ),
+      printers: state.printers.map((p) => {
+        if (p.id === printerId) {
+          return {
+            ...p,
+            status: "printing" as const,
+            currentOrderId: orderId,
+            currentOrderNo: order.orderNo,
+            progress: 0,
+            resinType: order.materialType,
+            resinColor: order.materialColor,
+            resinLevel: Math.max(p.resinLevel, 60),
+            layerHeight: order.layerHeight,
+            exposureTime: resinInfo?.recommendedExposure || 8.5,
+            totalLayers: Math.round(300 / order.layerHeight),
+            currentLayer: 0,
+            printDuration: Math.round((300 / order.layerHeight) * (resinInfo?.recommendedExposure || 8.5)),
+            elapsedTime: 0,
+          };
+        }
+        if (p.id === previousPrinterId) {
+          return {
+            ...p,
+            status: "idle" as const,
+            currentOrderId: undefined,
+            currentOrderNo: undefined,
+            progress: 0,
+          };
+        }
+        return p;
+      }),
+    }));
+  },
+
+  advanceToCleaning: (orderId, cleaningStationId) => {
+    const state = get();
+    const order = state.orders.find((o) => o.id === orderId);
+    const station = state.cleaningStations.find((s) => s.id === cleaningStationId);
+    if (!order || !station) return;
+
+    const previousPrinterId = order.assignedPrinterId;
+
+    set((state) => ({
+      orders: state.orders.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: "cleaning" as OrderStatus,
+              assignedCleaningId: cleaningStationId,
+              updatedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
+              timeline: [
+                ...o.timeline,
+                {
+                  status: "cleaning",
+                  statusLabel: "清洗中",
+                  timestamp: new Date().toISOString().replace("T", " ").slice(0, 19),
+                  operator: "系统",
+                  remark: `打印完成，转入 ${station.name} 酒精清洗`,
+                },
+              ],
+            }
+          : o
+      ),
+      printers: state.printers.map((p) => {
+        if (p.id === previousPrinterId) {
+          return {
+            ...p,
+            status: "idle" as const,
+            currentOrderId: undefined,
+            currentOrderNo: undefined,
+            progress: 100,
+          };
+        }
+        return p;
+      }),
+      cleaningStations: state.cleaningStations.map((s) =>
+        s.id === cleaningStationId
+          ? {
+              ...s,
+              status: "cleaning" as const,
+              orderId,
+              orderNo: order.orderNo,
+              cleaningTime: 900,
+              remainingTime: 900,
+              alcoholConcentration: Math.max(s.alcoholConcentration, 90),
+            }
+          : s
+      ),
+    }));
+  },
+
+  advanceToCuring: (orderId, curingStationId) => {
+    const state = get();
+    const order = state.orders.find((o) => o.id === orderId);
+    const station = state.curingStations.find((s) => s.id === curingStationId);
+    if (!order || !station) return;
+
+    const previousCleaningId = order.assignedCleaningId;
+
+    set((state) => ({
+      orders: state.orders.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: "support" as OrderStatus,
+              assignedCuringId: curingStationId,
+              updatedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
+              timeline: [
+                ...o.timeline,
+                {
+                  status: "support",
+                  statusLabel: "去支撑",
+                  timestamp: new Date().toISOString().replace("T", " ").slice(0, 19),
+                  operator: "系统",
+                  remark: `清洗完成，转入 ${station.name} UV固化并去支撑`,
+                },
+              ],
+            }
+          : o
+      ),
+      cleaningStations: state.cleaningStations.map((s) => {
+        if (s.id === previousCleaningId) {
+          return {
+            ...s,
+            status: "idle" as const,
+            orderId: undefined,
+            orderNo: undefined,
+            remainingTime: 0,
+          };
+        }
+        return s;
+      }),
+      curingStations: state.curingStations.map((s) =>
+        s.id === curingStationId
+          ? {
+              ...s,
+              status: "curing" as const,
+              orderId,
+              orderNo: order.orderNo,
+              curingTime: 2400,
+              remainingTime: 2400,
+              uvIntensity: 80,
+              temperature: 60,
+              rotationSpeed: 6,
+            }
+          : s
+      ),
+    }));
+  },
+
+  advanceSimple: (orderId, nextStatus) => {
+    const statusLabels: Record<OrderStatus, string> = {
+      pending: "待审核",
+      reviewed: "已审核",
+      layout: "排版中",
+      printing: "打印中",
+      cleaning: "清洗中",
+      support: "去支撑",
+      qc: "质检中",
+      shipping: "发货中",
+      completed: "已完成",
+    };
+
+    set((state) => ({
+      orders: state.orders.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: nextStatus,
+              updatedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
+              timeline: [
+                ...o.timeline,
+                {
+                  status: nextStatus,
+                  statusLabel: statusLabels[nextStatus],
+                  timestamp: new Date().toISOString().replace("T", " ").slice(0, 19),
+                  operator: "系统",
+                  remark: `推进至${statusLabels[nextStatus]}`,
+                },
+              ],
+            }
+          : o
+      ),
+    }));
+  },
+
+  refillResin: (printerId, amountLiters) => {
+    set((state) => ({
+      printers: state.printers.map((p) =>
+        p.id === printerId
+          ? { ...p, resinLevel: Math.min(100, p.resinLevel + amountLiters * 10) }
+          : p
+      ),
+    }));
+  },
+
+  changeResin: (printerId, resinId) => {
+    const resin = get().resins.find((r) => r.id === resinId);
+    if (!resin) return;
+
+    set((state) => ({
+      printers: state.printers.map((p) =>
+        p.id === printerId
+          ? {
+              ...p,
+              resinType: resin.type,
+              resinColor: resin.color,
+              resinLevel: 100,
+              exposureTime: resin.recommendedExposure,
+            }
+          : p
+      ),
+      resins: state.resins.map((r) =>
+        r.id === resinId ? { ...r, stock: Math.max(0, r.stock - 1) } : r
+      ),
+    }));
+  },
+
+  updateResinStock: (resinId, delta) => {
+    set((state) => ({
+      resins: state.resins.map((r) =>
+        r.id === resinId ? { ...r, stock: Math.max(0, r.stock + delta) } : r
+      ),
+    }));
+  },
+
+  updatePrinter: (printerId, updates) => {
+    set((state) => ({
+      printers: state.printers.map((p) =>
+        p.id === printerId ? { ...p, ...updates } : p
+      ),
     }));
   },
 }));

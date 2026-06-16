@@ -10,6 +10,7 @@ import PrintControl from "@/pages/PrintControl";
 import CleaningCuring from "@/pages/CleaningCuring";
 import SupportRemoval from "@/pages/SupportRemoval";
 import Delivery from "@/pages/Delivery";
+import CustomerPortal from "@/pages/CustomerPortal";
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/cleaning" element={<CleaningCuring />} />
           <Route path="/support" element={<SupportRemoval />} />
           <Route path="/delivery" element={<Delivery />} />
+          <Route path="/portal" element={<CustomerPortal />} />
         </Routes>
       </Layout>
     </Router>

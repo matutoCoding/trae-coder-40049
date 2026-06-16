@@ -12,6 +12,7 @@ import {
   Search,
   User,
   Zap,
+  Globe,
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useState } from "react";
@@ -26,6 +27,7 @@ const navItems = [
   { to: "/cleaning", icon: Droplets, label: "清洗固化" },
   { to: "/support", icon: Wrench, label: "支撑去除" },
   { to: "/delivery", icon: Truck, label: "成品交付" },
+  { to: "/portal", icon: Globe, label: "接单大厅" },
 ];
 
 function Sidebar() {

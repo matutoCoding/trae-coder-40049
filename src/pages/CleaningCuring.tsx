@@ -29,6 +29,7 @@ export default function CleaningCuring() {
   const orders = useFactoryStore((s) => s.orders);
   const updateCleaningStation = useFactoryStore((s) => s.updateCleaningStation);
   const updateCuringStation = useFactoryStore((s) => s.updateCuringStation);
+  const store = useFactoryStore;
 
   const [selectedTab, setSelectedTab] = useState<"cleaning" | "curing">("cleaning");
   const [cleaningParams, setCleaningParams] = useState({
@@ -45,19 +46,28 @@ export default function CleaningCuring() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      cleaningStations.forEach((s) => {
+      const state = store.getState();
+      state.cleaningStations.forEach((s) => {
         if (s.status === "cleaning" && s.remainingTime > 0) {
-          updateCleaningStation(s.id, { remainingTime: s.remainingTime - 1 });
+          if (s.remainingTime - 1 === 0) {
+            updateCleaningStation(s.id, { remainingTime: 0, status: "completed" });
+          } else {
+            updateCleaningStation(s.id, { remainingTime: s.remainingTime - 1 });
+          }
         }
       });
-      curingStations.forEach((s) => {
+      state.curingStations.forEach((s) => {
         if (s.status === "curing" && s.remainingTime > 0) {
-          updateCuringStation(s.id, { remainingTime: s.remainingTime - 1 });
+          if (s.remainingTime - 1 === 0) {
+            updateCuringStation(s.id, { remainingTime: 0, status: "completed", orderId: undefined });
+          } else {
+            updateCuringStation(s.id, { remainingTime: s.remainingTime - 1 });
+          }
         }
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [cleaningStations, curingStations, updateCleaningStation, updateCuringStation]);
+  }, [store, updateCleaningStation, updateCuringStation]);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);

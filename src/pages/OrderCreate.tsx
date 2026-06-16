@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   ArrowLeft,
   Upload,
@@ -42,8 +42,8 @@ export default function OrderCreate() {
     materialColor: "白色",
     layerHeight: 0.05,
     quantity: 1,
-    unitPrice: 0,
     remark: "",
+    isUrgent: false,
   });
 
   const [uploadedFiles, setUploadedFiles] = useState<{ name: string; size: number }[]>([]);
@@ -51,15 +51,24 @@ export default function OrderCreate() {
 
   const currentMaterial = materialOptions.find((m) => m.value === formData.materialType);
 
-  const calculatePrice = () => {
+  const unitPrice = useMemo(() => {
+    if (uploadedFiles.length === 0) return 0;
     const basePrice = resins.find((r) => r.type === formData.materialType)?.pricePerUnit || 480;
-    const layerMultiplier = formData.layerHeight <= 0.025 ? 2 : formData.layerHeight === 0.05 ? 1.5 : 1;
-    const fileVolume = uploadedFiles.length * 100;
-    const unitPrice = Math.round((basePrice * layerMultiplier * fileVolume) / 1000);
-    setFormData({ ...formData, unitPrice: Math.max(unitPrice, 100) });
-  };
+    const layerMultiplier = formData.layerHeight === 0.025 ? 2 : formData.layerHeight === 0.05 ? 1.5 : 1;
+    const fileVolume = uploadedFiles.reduce((sum, f) => sum + f.size, 0) / 100000;
+    const price = Math.round((basePrice * layerMultiplier * fileVolume) / 1000);
+    return Math.max(price, 100);
+  }, [uploadedFiles, formData.materialType, formData.layerHeight, resins]);
+
+  const layerMultiplier = formData.layerHeight === 0.025 ? 2 : formData.layerHeight === 0.05 ? 1.5 : 1;
+  const totalPrice = unitPrice * formData.quantity * (formData.isUrgent ? 1.3 : 1);
 
   const handleSubmit = (submitType: "save" | "submit") => {
+    if (submitType === "submit" && unitPrice === 0) {
+      alert("请先上传模型文件以生成报价");
+      return;
+    }
+
     const now = new Date().toISOString().replace("T", " ").slice(0, 19);
     const orderNo = `SLA${now.replace(/[-: ]/g, "").slice(0, 12)}`;
 
@@ -83,8 +92,8 @@ export default function OrderCreate() {
       materialColor: formData.materialColor,
       layerHeight: formData.layerHeight,
       quantity: formData.quantity,
-      unitPrice: formData.unitPrice,
-      totalPrice: formData.unitPrice * formData.quantity,
+      unitPrice,
+      totalPrice: Math.round(totalPrice),
       status: "pending" as const,
       createdAt: now,
       updatedAt: now,
@@ -336,6 +345,17 @@ export default function OrderCreate() {
                 />
               </div>
               <div className="md:col-span-2">
+                <label className="flex items-center gap-3 cursor-pointer select-none py-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.isUrgent}
+                    onChange={(e) => setFormData({ ...formData, isUrgent: e.target.checked })}
+                    className="w-4 h-4 rounded border-dark-600 bg-dark-900 text-industrial-500 focus:ring-industrial-500 focus:ring-offset-0"
+                  />
+                  <span className="text-sm font-display text-dark-200">加急订单 (+30%加急费)</span>
+                </label>
+              </div>
+              <div className="md:col-span-2">
                 <label className="label-industrial">备注说明</label>
                 <div className="relative">
                   <MessageSquare className="w-4 h-4 text-dark-500 absolute left-3 top-3" />
@@ -357,16 +377,10 @@ export default function OrderCreate() {
               <DollarSign className="w-5 h-5 text-amber-400" />
               报价预览
             </h2>
-            <button
-              onClick={calculatePrice}
-              className="btn-secondary w-full mb-4"
-            >
-              自动计算报价
-            </button>
             <div className="space-y-3 border-t border-dark-700 pt-4">
               <div className="flex justify-between text-sm">
                 <span className="text-dark-400 font-mono">材料单价</span>
-                <span className="font-mono text-dark-200">¥{formData.unitPrice.toLocaleString()}</span>
+                <span className="font-mono text-dark-200">¥{unitPrice.toLocaleString()}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-dark-400 font-mono">打印数量</span>
@@ -375,18 +389,24 @@ export default function OrderCreate() {
               <div className="flex justify-between text-sm">
                 <span className="text-dark-400 font-mono">层厚系数</span>
                 <span className="font-mono text-dark-200">
-                  {formData.layerHeight <= 0.025 ? "x2.0" : formData.layerHeight === 0.05 ? "x1.5" : "x1.0"}
+                  x{layerMultiplier.toFixed(1)}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-dark-400 font-mono">文件数</span>
                 <span className="font-mono text-dark-200">{uploadedFiles.length} 个</span>
               </div>
+              {formData.isUrgent && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-amber-400 font-mono">加急费用 (30%)</span>
+                  <span className="font-mono text-amber-400">¥{Math.round(unitPrice * formData.quantity * 0.3).toLocaleString()}</span>
+                </div>
+              )}
               <div className="pt-3 mt-3 border-t border-dark-700">
                 <div className="flex justify-between items-center">
                   <span className="font-display font-semibold text-dark-100">订单总计</span>
                   <span className="text-2xl font-display font-bold text-amber-400">
-                    ¥{(formData.unitPrice * formData.quantity).toLocaleString()}
+                    ¥{Math.round(totalPrice).toLocaleString()}
                   </span>
                 </div>
               </div>

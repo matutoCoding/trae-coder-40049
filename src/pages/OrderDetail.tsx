@@ -48,9 +48,16 @@ export default function OrderDetail() {
   const { id } = useParams();
   const order = useFactoryStore((s) => s.getOrderById(id || ""));
   const printers = useFactoryStore((s) => s.printers);
-  const updateOrderStatus = useFactoryStore((s) => s.updateOrderStatus);
+  const cleaningStations = useFactoryStore((s) => s.cleaningStations);
+  const curingStations = useFactoryStore((s) => s.curingStations);
+  const advanceSimple = useFactoryStore((s) => s.advanceSimple);
+  const advanceToPrinting = useFactoryStore((s) => s.advanceToPrinting);
+  const advanceToCleaning = useFactoryStore((s) => s.advanceToCleaning);
+  const advanceToCuring = useFactoryStore((s) => s.advanceToCuring);
 
   const [activeTab, setActiveTab] = useState<"info" | "files" | "timeline" | "messages">("info");
+  const [deviceSelector, setDeviceSelector] = useState<"printer" | "cleaning" | "curing" | null>(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
 
   if (!order) {
     return (
@@ -531,16 +538,22 @@ export default function OrderDetail() {
           <div className="card-industrial p-5">
             <h3 className="font-display font-semibold text-dark-50 mb-4">快速操作</h3>
             <div className="space-y-2">
-              {currentStepIndex < processSteps.length - 1 && (
+              {currentStepIndex < processSteps.length - 1 && !deviceSelector && (
                 <button
                   onClick={() => {
                     const nextStep = processSteps[currentStepIndex + 1];
-                    updateOrderStatus(
-                      order.id,
-                      nextStep.key as any,
-                      "系统",
-                      `推进至${nextStep.label}`
-                    );
+                    if (nextStep.key === "printing") {
+                      setDeviceSelector("printer");
+                      setSelectedDeviceId(null);
+                    } else if (nextStep.key === "cleaning") {
+                      setDeviceSelector("cleaning");
+                      setSelectedDeviceId(null);
+                    } else if (nextStep.key === "support") {
+                      setDeviceSelector("curing");
+                      setSelectedDeviceId(null);
+                    } else {
+                      advanceSimple(order.id, nextStep.key as any);
+                    }
                   }}
                   className="btn-primary w-full flex items-center justify-center gap-2"
                 >
@@ -548,6 +561,176 @@ export default function OrderDetail() {
                   推进至: {processSteps[currentStepIndex + 1].label}
                 </button>
               )}
+
+              {deviceSelector === "printer" && (
+                <div className="space-y-3">
+                  <p className="text-sm font-display text-dark-200">选择空闲打印机</p>
+                  {printers.filter((p) => p.status === "idle").length === 0 ? (
+                    <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-sm p-3">
+                      暂无空闲打印机可用
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {printers
+                        .filter((p) => p.status === "idle")
+                        .map((p) => (
+                          <button
+                            key={p.id}
+                            onClick={() => setSelectedDeviceId(p.id === selectedDeviceId ? null : p.id)}
+                            className={cn(
+                              "w-full text-left p-3 rounded-sm border transition-all",
+                              p.id === selectedDeviceId
+                                ? "bg-industrial-500/15 border-industrial-500/50 text-industrial-400"
+                                : "bg-dark-900/50 border-dark-700 text-dark-200 hover:border-industrial-500/30"
+                            )}
+                          >
+                            <p className="font-display font-medium text-sm">{p.name}</p>
+                            <p className="text-xs font-mono text-dark-500 mt-0.5">{p.model}</p>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setDeviceSelector(null); setSelectedDeviceId(null); }}
+                      className="btn-secondary flex-1 text-sm"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (selectedDeviceId) {
+                          advanceToPrinting(order.id, selectedDeviceId);
+                          setDeviceSelector(null);
+                          setSelectedDeviceId(null);
+                        }
+                      }}
+                      disabled={!selectedDeviceId}
+                      className={cn(
+                        "flex-1 text-sm flex items-center justify-center gap-1.5",
+                        selectedDeviceId ? "btn-primary" : "btn-secondary opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      确认分配
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {deviceSelector === "cleaning" && (
+                <div className="space-y-3">
+                  <p className="text-sm font-display text-dark-200">选择空闲清洗工位</p>
+                  {cleaningStations.filter((s) => s.status === "idle").length === 0 ? (
+                    <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-sm p-3">
+                      暂无空闲清洗工位可用
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {cleaningStations
+                        .filter((s) => s.status === "idle")
+                        .map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => setSelectedDeviceId(s.id === selectedDeviceId ? null : s.id)}
+                            className={cn(
+                              "w-full text-left p-3 rounded-sm border transition-all",
+                              s.id === selectedDeviceId
+                                ? "bg-industrial-500/15 border-industrial-500/50 text-industrial-400"
+                                : "bg-dark-900/50 border-dark-700 text-dark-200 hover:border-industrial-500/30"
+                            )}
+                          >
+                            <p className="font-display font-medium text-sm">{s.name}</p>
+                            <p className="text-xs font-mono text-dark-500 mt-0.5">
+                              酒精浓度: {s.alcoholConcentration}%
+                            </p>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setDeviceSelector(null); setSelectedDeviceId(null); }}
+                      className="btn-secondary flex-1 text-sm"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (selectedDeviceId) {
+                          advanceToCleaning(order.id, selectedDeviceId);
+                          setDeviceSelector(null);
+                          setSelectedDeviceId(null);
+                        }
+                      }}
+                      disabled={!selectedDeviceId}
+                      className={cn(
+                        "flex-1 text-sm flex items-center justify-center gap-1.5",
+                        selectedDeviceId ? "btn-primary" : "btn-secondary opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      确认分配
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {deviceSelector === "curing" && (
+                <div className="space-y-3">
+                  <p className="text-sm font-display text-dark-200">选择空闲固化工位</p>
+                  {curingStations.filter((s) => s.status === "idle").length === 0 ? (
+                    <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-sm p-3">
+                      暂无空闲固化工位可用
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {curingStations
+                        .filter((s) => s.status === "idle")
+                        .map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => setSelectedDeviceId(s.id === selectedDeviceId ? null : s.id)}
+                            className={cn(
+                              "w-full text-left p-3 rounded-sm border transition-all",
+                              s.id === selectedDeviceId
+                                ? "bg-industrial-500/15 border-industrial-500/50 text-industrial-400"
+                                : "bg-dark-900/50 border-dark-700 text-dark-200 hover:border-industrial-500/30"
+                            )}
+                          >
+                            <p className="font-display font-medium text-sm">{s.name}</p>
+                            <p className="text-xs font-mono text-dark-500 mt-0.5">
+                              UV强度: {s.uvIntensity}% | 温度: {s.temperature}°C
+                            </p>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { setDeviceSelector(null); setSelectedDeviceId(null); }}
+                      className="btn-secondary flex-1 text-sm"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (selectedDeviceId) {
+                          advanceToCuring(order.id, selectedDeviceId);
+                          setDeviceSelector(null);
+                          setSelectedDeviceId(null);
+                        }
+                      }}
+                      disabled={!selectedDeviceId}
+                      className={cn(
+                        "flex-1 text-sm flex items-center justify-center gap-1.5",
+                        selectedDeviceId ? "btn-primary" : "btn-secondary opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      确认分配
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <button className="btn-secondary w-full flex items-center justify-center gap-2">
                 <Calendar className="w-4 h-4" />
                 预约生产
